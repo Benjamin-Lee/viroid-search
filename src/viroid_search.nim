@@ -136,7 +136,5 @@ when isMainModule:
         internalSmallRnas.excl(id)
         styledEcho fgRed, "removing id due to no right overlap " & $id
         continue
-
-      # if not, its a TSR and we can remove it
-      # check if right kmer overlaps
+      
   echo toSeq(internalSmallRnas)
