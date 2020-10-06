@@ -8,9 +8,11 @@ import sets
 import strutils
 import terminal
 import strformat
+import os
 
-const K = 17
-const FASTA_PATH = "GSM458930-2718.fasta"
+var params = commandLineParams()
+var FASTA_PATH = params[0]
+var K = params[1].parseInt
 const USE_CACHE = true
 if not USE_CACHE:
   styledEcho fgYellow, "[WARNING] ", fgDefault, "Cache is disabled!"
