@@ -85,9 +85,9 @@ proc main(path: string, k: int) =
   for id, sequence in fasta(path):
     if sequence.len < k:
       tooShortReads += 1
-      totalReads += 1
       continue
     sequences[sequence] = id
+    totalReads += 1
 
   # This will contain all of the viroid-derived sRNAs
   # at first, all reads are putative ISRs
