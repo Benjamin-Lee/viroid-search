@@ -1,6 +1,6 @@
 # This is just an example to get you started. A typical hybrid package
 # uses this file as the main entry point of the application.
-
+# import nimprof
 import bioseq
 import tables
 import sequtils
@@ -10,9 +10,6 @@ import terminal
 import strformat
 import os
 
-var params = commandLineParams()
-var FASTA_PATH = params[0]
-var K = params[1].parseInt
 const USE_CACHE = true
 if not USE_CACHE:
   styledEcho fgYellow, "[WARNING] ", fgDefault, "Cache is disabled!"
@@ -77,17 +74,18 @@ proc overlapsWithStartOf*(a: string, b: string, k: int): bool =
   return false
 
 
-when isMainModule:
+proc main(path: string, k: int) =
 
-  styledEcho fgCyan, "[Info] ", fgDefault, &"Loading reads from {FASTA_PATH}..."
-
-  var tooShortReads = 0
+  styledEcho fgCyan, "[Info] ", fgDefault, &"Loading reads from {path}..."
 
   # read and deduplicate the input sequences
   var sequences = initTable[string, string]()
-  for id, sequence in fasta(FASTA_PATH):
-    if sequence.len < K:
+  var tooShortReads = 0
+  var totalReads = 0
+  for id, sequence in fasta(path):
+    if sequence.len < k:
       tooShortReads += 1
+      totalReads += 1
       continue
     sequences[sequence] = id
 
@@ -98,15 +96,15 @@ when isMainModule:
   # A mapping of k-mers to the sequences they occur in
   var kmersToSeqs = initTable[string, HashSet[string]]()
   for sequence, id in sequences.pairs():
-    for _, kmer in sequence.kmersWithIndices(K, degeneratesAllowed=true):
+    for _, kmer in sequence.kmersWithIndices(k, degeneratesAllowed=true):
       if kmersToSeqs.hasKeyOrPut(kmer, toHashSet([sequence])):
         kmersToSeqs[kmer].incl(sequence)
         
   if tooShortReads > 0:
-    styledEcho fgYellow, "[Warn] ", fgDefault, &"{tooShortReads} reads rejected for being less than {K} nt long."
-  styledEcho fgCyan, "[Info] ", fgDefault, &"Data loading complete. Beginning filtering..."
+    styledEcho fgYellow, "[Warn] ", fgDefault, &"{tooShortReads} reads rejected for being less than {k} nt long."
+  styledEcho fgCyan, "[Info] ", fgDefault, &"Loaded {sequences.len} unique reads from {totalReads} total reads. Beginning filtering..."
 
-  proc checkForOverlaps(sequence: string, sequencesToCheck: HashSet[string], start: bool, k: int): bool =
+  proc checkForOverlaps(sequence: string, sequencesToCheck: HashSet[string], start: bool): bool =
     ## Checks if any element of `sequences` overlap with the start of `sequence`
     for potentialOverlap in sequencesToCheck:
       if start and potentialOverlap.overlapsWithStartOf(sequence, k):
@@ -128,17 +126,17 @@ when isMainModule:
     for sequence in internalSmallRnas:
 
       # check if start kmer overlaps with any sequence
-      seqsToCheckForStartOverlaps = kmersToSeqs[sequence[0..<K]].intersection(internalSmallRnas)
+      seqsToCheckForStartOverlaps = kmersToSeqs[sequence[0..<k]].intersection(internalSmallRnas)
       seqsToCheckForStartOverlaps.excl(sequence)
-      if not sequence.checkForOverlaps(seqsToCheckForStartOverlaps, start=true, k=K):
+      if not sequence.checkForOverlaps(seqsToCheckForStartOverlaps, start=true):
         tsrsRemoved += 1
         internalSmallRnas.excl(sequence)
         continue
 
       # check if end k-mer overlaps
-      seqsToCheckForEndOverlaps = kmersToSeqs[sequence[^K .. ^1]].intersection(internalSmallRnas)
+      seqsToCheckForEndOverlaps = kmersToSeqs[sequence[^k .. ^1]].intersection(internalSmallRnas)
       seqsToCheckForEndOverlaps.excl(sequence)
-      if not sequence.checkForOverlaps(seqsToCheckForEndOverlaps, start=false, k=K):
+      if not sequence.checkForOverlaps(seqsToCheckForEndOverlaps, start=false):
         tsrsRemoved += 1
         internalSmallRnas.excl(sequence)
         continue
@@ -149,3 +147,9 @@ when isMainModule:
   for sequence in toSeq(internalSmallRnas):
     echo ">", sequences[sequence]
     echo sequence
+
+when isMainModule:
+  var params = commandLineParams()
+  var fp = params[0]
+  var k = params[1].parseInt
+  main(fp, k)
