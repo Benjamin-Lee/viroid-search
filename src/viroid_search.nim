@@ -7,10 +7,17 @@ import sequtils
 import sets
 import strutils
 import terminal
+import strformat
 
 const K = 17
-const USE_CACHE = false
-var cache = initTable[(string, string), bool]()
+const FASTA_PATH = "GSM458930-2718.fasta"
+const USE_CACHE = true
+if not USE_CACHE:
+  styledEcho fgYellow, "[WARNING] ", fgDefault, "Cache is disabled!"
+
+var overlapCache = initTable[(string, string), bool]()
+var overlapCacheHit = 0
+var overlapCacheMiss = 0
 
 proc overlapsWithStartOf*(a: string, b: string, k: int): bool = 
   ## Checks whether the end of `a` overlaps with the start (left) of `b` by at least `k` bases.
@@ -22,10 +29,10 @@ proc overlapsWithStartOf*(a: string, b: string, k: int): bool =
     # note that CGA (first three bases of `b`) also occurs at the start of `a`
     assert "CGATATTTCGATA".overlapsWithStartOf("GATATCAGAA", 3) == true
 
-  if USE_CACHE and (a, b) in cache:
-    styledEcho fgGreen, "cache hit" # TODO: check if cache is working
-    return cache[(a, b)]
-
+  if USE_CACHE and (a, b) in overlapCache:
+    overlapCacheHit += 1
+    return overlapCache[(a, b)]
+  overlapCacheMiss += 1
   let kmer = b[0..<k]
 
   # find the k-mer's indices in `a`
@@ -67,31 +74,20 @@ proc overlapsWithStartOf*(a: string, b: string, k: int): bool =
     # overlap index from the end of the sequence, i.e. `a.high - overlapIndex`.
     if a.continuesWith(b[0..min(b.high, a.high - overlapIndex)], overlapIndex):
       if USE_CACHE:
-        cache[(a, b)] = true
+        overlapCache[(a, b)] = true
       return true
   if USE_CACHE:
-    cache[(a, b)] = false
+    overlapCache[(a, b)] = false
   return false
 
-proc checkForStartOverlaps(sequence: string, sequences: seq[string], k: int): bool =
-  ## Checks if any element of `sequences` overlap with the start of `sequence`
-  for potentialOverlap in sequences:
-    if potentialOverlap.overlapsWithStartOf(sequence, k):
-      return true
-  return false
-
-proc checkForEndOverlaps(sequence: string, sequences: seq[string], k: int): bool =
-  ## Checks if any of element `sequences` overlap with the end of `sequence`
-  for potentialOverlap in sequences:
-    if sequence.overlapsWithStartOf(potentialOverlap, k):
-      return true
-  return false
 
 when isMainModule:
 
+  styledEcho fgCyan, "[Info] ", fgDefault, &"Loading reads from {FASTA_PATH}..."
+
   # read and deduplicate the input sequences
   var sequences = initTable[string, string]()
-  for id, sequence in fasta("viroid.fasta"):
+  for id, sequence in fasta(FASTA_PATH):
     sequences[sequence] = id
 
   # invert sequence to ID mapping
@@ -108,33 +104,59 @@ when isMainModule:
       if kmersToIds.hasKeyOrPut(kmer, toHashSet([id])):
         kmersToIds[kmer].incl(id)
 
+  proc checkForOverlaps(sequence: string, sequencesToCheck: seq[string], start: bool, k: int): bool =
+    ## Checks if any element of `sequences` overlap with the start of `sequence`
+    for potentialOverlap in sequencesToCheck:
+      if start and potentialOverlap.overlapsWithStartOf(sequence, k):
+        return true
+      elif sequence.overlapsWithStartOf(potentialOverlap, k):
+        return true 
+    return false
+  
+  styledEcho fgCyan, "[Info] ", fgDefault, "Data loading complete. Beginning filtering..."
 
   var tsrsRemoved = 1 
+  var iteration = 0
+  var isrCounter = 0
+
   while tsrsRemoved != 0:
     tsrsRemoved = 0
+    isrCounter = 0
+    iteration += 1
+
+    var isrCard = internalSmallRnas.card
     for id in internalSmallRnas.items():
+
+      # for friendlier output
+      if isrCounter mod 1000 == 0:
+        stdout.styledWrite "\r", fgCyan, &"[Info] ", fgDefault, &"Iteration: {iteration} ", &"Terminal Reads Removed: {tsrsRemoved}, Remaining Reads: {internalSmallRnas.card}, Progress: {(isrCounter / isrCard) * 100:.1f}% ({isrCounter}/{isrCard})"
+        stdout.flushFile()
+      isrCounter += 1 
+
       var sequence = idsToSequences[id]
-      
+
       # check if start kmer overlaps with any sequence
       var sequencesWithStartKmer = kmersToIds[sequence[0..<K]]
-      var idsToCheckForStartOverlaps= internalSmallRnas.intersection(sequencesWithStartKmer) - toHashSet([id])
+      var idsToCheckForStartOverlaps= sequencesWithStartKmer.intersection(internalSmallRnas) - toHashSet([id])
       var seqsToCheckForStartOverlaps = toSeq(idsToCheckForStartOverlaps.items()).mapIt(idsToSequences[it])
-      if not sequence.checkForStartOverlaps(seqsToCheckForStartOverlaps, K):
+      if not sequence.checkForOverlaps(seqsToCheckForStartOverlaps, start=true, k=K):
         tsrsRemoved += 1
         internalSmallRnas.excl(id)
-        styledEcho fgRed, "removing id due to no left overlap " & $id
         continue
 
       # check if end k-mer overlaps
       var sequencesWithEndKmer = kmersToIds[sequence[^K .. ^1]]
-      var idsToCheckForEndOverlaps = internalSmallRnas.intersection(sequencesWithEndKmer) - toHashSet([id])
-      var seqsToCheckForEndOverlaps = toSeq(idsToCheckForEndOverlaps.items()).mapIt(idsToSequences[it])
-      
-      # if not, its a TSR and we can remove it
-      if not sequence.checkForEndOverlaps(seqsToCheckForEndOverlaps, K):
+      var idsToCheckForEndOverlaps = sequencesWithEndKmer.intersection(internalSmallRnas) - toHashSet([id])
+      var seqsToCheckForEndOverlaps = toSeq(idsToCheckForEndOverlaps.items()).mapIt(idsToSequences[it])      
+      if not sequence.checkForOverlaps(seqsToCheckForEndOverlaps, start=false, k=K):
         tsrsRemoved += 1
         internalSmallRnas.excl(id)
-        styledEcho fgRed, "removing id due to no right overlap " & $id
         continue
-      
-  echo toSeq(internalSmallRnas)
+    
+    stdout.eraseLine
+    styledEcho fgCyan, "[Info] ", fgDefault, &"Iteration: {iteration} ", &"Terminal Reads Removed: {tsrsRemoved}, Remaining Reads: {internalSmallRnas.card}"
+
+  styledEcho fgGreen, "[DONE] ", fgDefault, &"Filtering complete. {internalSmallRnas.card} remaining reads. 🚀"
+  for x in toSeq(internalSmallRnas):
+    echo ">", x
+    echo idsToSequences[x]
