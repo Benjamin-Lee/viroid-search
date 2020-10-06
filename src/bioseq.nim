@@ -22,7 +22,7 @@ type
   DegenerateBaseError* = object of CatchableError ## \
   ## Raised when an input sequence is degenerate.
 
-iterator kmersWithIndices*(x: string, k: Positive, degeneratesAllowed = false): (int, string) =
+iterator kmersWithIndices*(x: string, k: Positive): (int, string) =
   ## Yields all of the *k*-mers (and their indices) in a given string.
   ## Note that all yielded *k*-mers are uppercase, regardless of whether the input sequence is uppercase.
   ## 

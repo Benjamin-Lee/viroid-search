@@ -39,7 +39,7 @@ proc overlapsWithStartOf*(a: string, b: string, k: int): bool =
 
   # find the k-mer's indices in `a`
   # note that, when called here, we already know that the k-mer is somewhere in the sequence
-  for index, kmerInA in a.kmersWithIndices(k, degeneratesAllowed=true):
+  for index, kmerInA in a.kmersWithIndices(k):
     if kmerInA == kmer:
       # This next part is a bit complex, so we'll take it step by step. 
       # We need to check if any potential overlap of `a` is actually an overlap.
@@ -96,7 +96,7 @@ proc main(path: string, k: int) =
   # A mapping of k-mers to the sequences they occur in
   var kmersToSeqs = initTable[string, HashSet[string]]()
   for sequence, id in sequences.pairs():
-    for _, kmer in sequence.kmersWithIndices(k, degeneratesAllowed=true):
+    for _, kmer in sequence.kmersWithIndices(k):
       if kmersToSeqs.hasKeyOrPut(kmer, toHashSet([sequence])):
         kmersToSeqs[kmer].incl(sequence)
         
@@ -113,6 +113,10 @@ proc main(path: string, k: int) =
         return true 
     return false
 
+  proc removeFromKmersTable(sequence: string): void = 
+     for i, kmer in sequence.kmersWithIndices(k):
+          kmersToSeqs[kmer].excl(sequence)
+
   var tsrsRemoved = 1 
   var seqsToCheckForStartOverlaps: HashSet[string]
   var seqsToCheckForEndOverlaps: HashSet[string]
@@ -126,18 +130,20 @@ proc main(path: string, k: int) =
     for sequence in internalSmallRnas:
 
       # check if start kmer overlaps with any sequence
-      seqsToCheckForStartOverlaps = kmersToSeqs[sequence[0..<k]].intersection(internalSmallRnas)
+      seqsToCheckForStartOverlaps = kmersToSeqs[sequence[0..<k]]
       seqsToCheckForStartOverlaps.excl(sequence)
       if not sequence.checkForOverlaps(seqsToCheckForStartOverlaps, start=true):
         tsrsRemoved += 1
+        removeFromKmersTable(sequence)
         internalSmallRnas.excl(sequence)
         continue
 
       # check if end k-mer overlaps
-      seqsToCheckForEndOverlaps = kmersToSeqs[sequence[^k .. ^1]].intersection(internalSmallRnas)
+      seqsToCheckForEndOverlaps = kmersToSeqs[sequence[^k .. ^1]]
       seqsToCheckForEndOverlaps.excl(sequence)
       if not sequence.checkForOverlaps(seqsToCheckForEndOverlaps, start=false):
         tsrsRemoved += 1
+        removeFromKmersTable(sequence)
         internalSmallRnas.excl(sequence)
         continue
     
