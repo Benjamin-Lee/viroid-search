@@ -20,6 +20,7 @@ if not USE_CACHE:
 var overlapCache = initTable[(string, string), bool]()
 var overlapCacheHit = 0
 var overlapCacheMiss = 0
+var iteration = 0
 
 proc overlapsWithStartOf*(a: string, b: string, k: int): bool = 
   ## Checks whether the end of `a` overlaps with the start (left) of `b` by at least `k` bases.
@@ -33,51 +34,44 @@ proc overlapsWithStartOf*(a: string, b: string, k: int): bool =
 
   if USE_CACHE and (a, b) in overlapCache:
     overlapCacheHit += 1
+    # if iteration == 1:
+      # echo &"{a}, {b}"
     return overlapCache[(a, b)]
   overlapCacheMiss += 1
   let kmer = b[0..<k]
 
   # find the k-mer's indices in `a`
   # note that, when called here, we already know that the k-mer is somewhere in the sequence
-  var overlapIndicesInA = newSeq[int]() 
-  for i, kmerInA in a.kmersWithIndices(k, degeneratesAllowed=true):
+  for index, kmerInA in a.kmersWithIndices(k, degeneratesAllowed=true):
     if kmerInA == kmer:
-      overlapIndicesInA.add(i)
-
-  # circuit breaker since a sequence in which the end of `a` isn't present doesn't overlap
-  if overlapIndicesInA.len == 0:
-    return false
-
-  # check whether any of the shared k-mers are a true overlap
-  for overlapIndex in overlapIndicesInA:
-    # This is a bit complex, so we'll take it step by step. 
-    # We need to check if any potential overlap of `a` is actually an overlap.
-    # For example, let a = "ILIKECOOKINGJUSTTOCOOK". b ="COOKINGISFUN", and k = 3.
-    # The start of `b` is "COO", which appears twice in `a`.
-    # However, the first time "COO" appears in `a` *is not* an overlap but the second is.
-    # We're whether `a` continues with `b[0..min(b.high, a.high - overlapIndex)`,
-    # starting from the overlap index and continuing as far in `b` as possible.
-    # To do this, we need to calculate how long within `b` we can go. Why?
-    # As expected, `"helloworld".continuesWith("world", 5) == true`.
-    # However, `"helloworld".continuesWith("worldly", 5) != true` due to the fact that
-    # "worldly" is not a substring of "helloworld".
-    # Therefore, we need `min(b.high, a.high - overlapIndex)` since there are two cases:
-    # 
-    # 1. either the rest of the `b` is potentially fully contained as a substring or
-    # 2. `b` is too long to be a substring even if it overlaps perfectly
-    #
-    # Going back to the earlier exanple, consider that, from the first k-mer match on,
-    # `"COOKINGJUSTTOCOOK".len` < `"COOKINGISFUN".len`. Thus, we need to use the entire 
-    # sequence of `b` when checking if `a` continues with `b`.
-    # 
-    # With the second k-mer match, "COOK", not all of `b` could be contained within `a`
-    # from the k-mer overlap index onwards. Thus, we need to only use the first n bases
-    # of `b`. How many? The number of letters of "COOK", which is the distance of the
-    # overlap index from the end of the sequence, i.e. `a.high - overlapIndex`.
-    if a.continuesWith(b[0..min(b.high, a.high - overlapIndex)], overlapIndex):
-      if USE_CACHE:
-        overlapCache[(a, b)] = true
-      return true
+      # This next part is a bit complex, so we'll take it step by step. 
+      # We need to check if any potential overlap of `a` is actually an overlap.
+      # For example, let a = "ILIKECOOKINGJUSTTOCOOK". b ="COOKINGISFUN", and k = 3.
+      # The start of `b` is "COO", which appears twice in `a`.
+      # However, the first time "COO" appears in `a` *is not* an overlap but the second is.
+      # We're going to determine whether `a` continues with `b[0..min(b.high, a.high - index)`,
+      # starting from the k-mer's index and continuing as far in `b` as possible.
+      # To do this, we need to calculate how much of `b` we can check for continuation in `a`. 
+      # Why? As expected, `"helloworld".continuesWith("world", 5) == true`.
+      # However, `"helloworld".continuesWith("worldly", 5) != true` due to the fact that
+      # "worldly" is not a substring of "helloworld".
+      # Therefore, we need `min(b.high, a.high - index)` since there are two cases:
+      # 
+      # 1. either the rest of the `b` is potentially fully contained as a substring or
+      # 2. `b` is too long to be a substring even if it overlaps perfectly
+      #
+      # Going back to the earlier exanple, consider that, from the first k-mer match on,
+      # `"COOKINGJUSTTOCOOK".len` < `"COOKINGISFUN".len`. Thus, we need to use the entire 
+      # sequence of `b` when checking if `a` continues with `b`.
+      # 
+      # With the second k-mer match, "COOK", not all of `b` could be contained within `a`
+      # from the k-mer overlap index onwards. Thus, we need to only use the first n bases
+      # of `b`. How many? The number of letters of "COOK", which is the distance of the
+      # overlap index from the end of the sequence, i.e. `a.high - index`.
+      if a.continuesWith(b[0..min(b.high, a.high - index)], index):
+        if USE_CACHE:
+          overlapCache[(a, b)] = true
+        return true
   if USE_CACHE:
     overlapCache[(a, b)] = false
   return false
@@ -97,23 +91,22 @@ when isMainModule:
       continue
     sequences[sequence] = id
 
-  # invert sequence to ID mapping
-  let idsToSequences = toSeq(sequences.pairs).mapIt((it[1], it[0])).toTable
-
   # This will contain all of the viroid-derived sRNAs
   # at first, all reads are putative ISRs
-  var internalSmallRnas = toHashSet(toSeq(idsToSequences.keys))
+  var internalSmallRnas = toHashSet(toSeq(sequences.keys))
 
   # A mapping of k-mers to the sequences they occur in
-  var kmersToIds = initTable[string, HashSet[string]]()
+  var kmersToSeqs = initTable[string, HashSet[string]]()
   for sequence, id in sequences.pairs():
     for _, kmer in sequence.kmersWithIndices(K, degeneratesAllowed=true):
+      if kmersToSeqs.hasKeyOrPut(kmer, toHashSet([sequence])):
+        kmersToSeqs[kmer].incl(sequence)
         
   if tooShortReads > 0:
     styledEcho fgYellow, "[Warn] ", fgDefault, &"{tooShortReads} reads rejected for being less than {K} nt long."
   styledEcho fgCyan, "[Info] ", fgDefault, &"Data loading complete. Beginning filtering..."
 
-  proc checkForOverlaps(sequence: string, sequencesToCheck: seq[string], start: bool, k: int): bool =
+  proc checkForOverlaps(sequence: string, sequencesToCheck: HashSet[string], start: bool, k: int): bool =
     ## Checks if any element of `sequences` overlap with the start of `sequence`
     for potentialOverlap in sequencesToCheck:
       if start and potentialOverlap.overlapsWithStartOf(sequence, k):
@@ -121,51 +114,38 @@ when isMainModule:
       elif sequence.overlapsWithStartOf(potentialOverlap, k):
         return true 
     return false
-  
-  styledEcho fgCyan, "[Info] ", fgDefault, "Data loading complete. Beginning filtering..."
 
   var tsrsRemoved = 1 
-  var iteration = 0
-  var isrCounter = 0
+  var seqsToCheckForStartOverlaps: HashSet[string]
+  var seqsToCheckForEndOverlaps: HashSet[string]
 
   while tsrsRemoved != 0:
     tsrsRemoved = 0
-    isrCounter = 0
     iteration += 1
+    overlapCacheHit = 0
+    overlapCacheMiss = 0
 
-    var isrCard = internalSmallRnas.card
-    for id in internalSmallRnas.items():
-
-      # for friendlier output
-      if isrCounter mod 1000 == 0:
-        stdout.styledWrite "\r", fgCyan, &"[Info] ", fgDefault, &"Iteration: {iteration} ", &"Terminal Reads Removed: {tsrsRemoved}, Remaining Reads: {internalSmallRnas.card}, Progress: {(isrCounter / isrCard) * 100:.1f}% ({isrCounter}/{isrCard})"
-        stdout.flushFile()
-      isrCounter += 1 
-
-      var sequence = idsToSequences[id]
+    for sequence in internalSmallRnas:
 
       # check if start kmer overlaps with any sequence
-      var sequencesWithStartKmer = kmersToIds[sequence[0..<K]]
-      var idsToCheckForStartOverlaps= sequencesWithStartKmer.intersection(internalSmallRnas) - toHashSet([id])
-      var seqsToCheckForStartOverlaps = toSeq(idsToCheckForStartOverlaps.items()).mapIt(idsToSequences[it])
+      seqsToCheckForStartOverlaps = kmersToSeqs[sequence[0..<K]].intersection(internalSmallRnas)
+      seqsToCheckForStartOverlaps.excl(sequence)
       if not sequence.checkForOverlaps(seqsToCheckForStartOverlaps, start=true, k=K):
         tsrsRemoved += 1
-        internalSmallRnas.excl(id)
+        internalSmallRnas.excl(sequence)
         continue
 
       # check if end k-mer overlaps
-      var sequencesWithEndKmer = kmersToIds[sequence[^K .. ^1]]
-      var idsToCheckForEndOverlaps = sequencesWithEndKmer.intersection(internalSmallRnas) - toHashSet([id])
-      var seqsToCheckForEndOverlaps = toSeq(idsToCheckForEndOverlaps.items()).mapIt(idsToSequences[it])      
+      seqsToCheckForEndOverlaps = kmersToSeqs[sequence[^K .. ^1]].intersection(internalSmallRnas)
+      seqsToCheckForEndOverlaps.excl(sequence)
       if not sequence.checkForOverlaps(seqsToCheckForEndOverlaps, start=false, k=K):
         tsrsRemoved += 1
-        internalSmallRnas.excl(id)
+        internalSmallRnas.excl(sequence)
         continue
     
     stdout.eraseLine
-    styledEcho fgCyan, "[Info] ", fgDefault, &"Iteration: {iteration} ", &"Terminal Reads Removed: {tsrsRemoved}, Remaining Reads: {internalSmallRnas.card}"
-
+    styledEcho fgCyan, "[Info] ", fgDefault, &"Iteration: {iteration}, ", &"Terminal Reads Removed: {tsrsRemoved}, Remaining Reads: {internalSmallRnas.card}, Cache hit rate: {(overlapCacheHit / (overlapCacheMiss + overlapCacheHit))*100.0:.1f}%"
   styledEcho fgGreen, "[DONE] ", fgDefault, &"Filtering complete. {internalSmallRnas.card} remaining reads. 🚀"
-  for x in toSeq(internalSmallRnas):
-    echo ">", x
-    echo idsToSequences[x]
+  for sequence in toSeq(internalSmallRnas):
+    echo ">", sequences[sequence]
+    echo sequence
