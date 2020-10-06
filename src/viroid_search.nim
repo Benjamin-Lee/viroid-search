@@ -85,9 +85,14 @@ when isMainModule:
 
   styledEcho fgCyan, "[Info] ", fgDefault, &"Loading reads from {FASTA_PATH}..."
 
+  var tooShortReads = 0
+
   # read and deduplicate the input sequences
   var sequences = initTable[string, string]()
   for id, sequence in fasta(FASTA_PATH):
+    if sequence.len < K:
+      tooShortReads += 1
+      continue
     sequences[sequence] = id
 
   # invert sequence to ID mapping
@@ -101,8 +106,10 @@ when isMainModule:
   var kmersToIds = initTable[string, HashSet[string]]()
   for sequence, id in sequences.pairs():
     for _, kmer in sequence.kmersWithIndices(K, degeneratesAllowed=true):
-      if kmersToIds.hasKeyOrPut(kmer, toHashSet([id])):
-        kmersToIds[kmer].incl(id)
+        
+  if tooShortReads > 0:
+    styledEcho fgYellow, "[Warn] ", fgDefault, &"{tooShortReads} reads rejected for being less than {K} nt long."
+  styledEcho fgCyan, "[Info] ", fgDefault, &"Data loading complete. Beginning filtering..."
 
   proc checkForOverlaps(sequence: string, sequencesToCheck: seq[string], start: bool, k: int): bool =
     ## Checks if any element of `sequences` overlap with the start of `sequence`
