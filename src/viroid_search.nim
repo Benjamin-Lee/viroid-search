@@ -10,16 +10,12 @@ import terminal
 import strformat
 import os
 
-const USE_CACHE = true
-if not USE_CACHE:
-  styledEcho fgYellow, "[WARNING] ", fgDefault, "Cache is disabled!"
-
 var overlapCache = initTable[(string, string), bool]()
 var overlapCacheHit = 0
 var overlapCacheMiss = 0
 var iteration = 0
 
-proc overlapsWithStartOf*(a: string, b: string, k: int): bool = 
+proc overlapsWithStartOf*(a: string, b: string, k: int, cache = true): bool = 
   ## Checks whether the end of `a` overlaps with the start (left) of `b` by at least `k` bases.
   runnableExamples:
     # the last three of `a` and first three of `b` overlap
@@ -29,7 +25,7 @@ proc overlapsWithStartOf*(a: string, b: string, k: int): bool =
     # note that CGA (first three bases of `b`) also occurs at the start of `a`
     assert "CGATATTTCGATA".overlapsWithStartOf("GATATCAGAA", 3) == true
 
-  if USE_CACHE and (a, b) in overlapCache:
+  if cache and (a, b) in overlapCache:
     overlapCacheHit += 1
     # if iteration == 1:
       # echo &"{a}, {b}"
@@ -65,17 +61,18 @@ proc overlapsWithStartOf*(a: string, b: string, k: int): bool =
       # from the k-mer overlap index onwards. Thus, we need to only use the first n bases
       # of `b`. How many? The number of letters of "COOK", which is the distance of the
       # overlap index from the end of the sequence, i.e. `a.high - index`.
-      if a.continuesWith(b[0..min(b.high, a.high - index)], index):
-        if USE_CACHE:
+      if a.endsWith(b[0..min(b.high, a.high - index)]):
+        if cache:
           overlapCache[(a, b)] = true
         return true
-  if USE_CACHE:
+  if cache:
     overlapCache[(a, b)] = false
   return false
 
 
-proc main(path: string, k: int) =
-
+proc main(path: string, k: int, cache: bool) =
+  if not cache:
+    styledEcho fgYellow, "[Warn] ", fgDefault, "Cache is disabled!"
   styledEcho fgCyan, "[Info] ", fgDefault, &"Loading reads from {path}..."
 
   # read and deduplicate the input sequences
@@ -107,9 +104,9 @@ proc main(path: string, k: int) =
   proc checkForOverlaps(sequence: string, sequencesToCheck: HashSet[string], start: bool): bool =
     ## Checks if any element of `sequences` overlap with the start of `sequence`
     for potentialOverlap in sequencesToCheck:
-      if start and potentialOverlap.overlapsWithStartOf(sequence, k):
+      if start and potentialOverlap.overlapsWithStartOf(sequence, k, cache=cache):
         return true
-      elif sequence.overlapsWithStartOf(potentialOverlap, k):
+      elif sequence.overlapsWithStartOf(potentialOverlap, k, cache=cache):
         return true 
     return false
 
@@ -158,4 +155,4 @@ when isMainModule:
   var params = commandLineParams()
   var fp = params[0]
   var k = params[1].parseInt
-  main(fp, k)
+  main(fp, k, cache=false)
