@@ -10,6 +10,27 @@ import terminal
 import strformat
 import os
 
+# A note on cache hit rates during the first iteration
+#
+# Why should there be any cache hits during the first round of filtering?
+# In theory, every read we're looking at is new. What we're missing is that,
+# for each read, there are actually two overlap checks: the one at the start and the end.
+# Imagine that our reads are "AAAA", "AAAT", and "GAAA" and that k=3.
+# First, we'll check if "AAAT" and "GAAA" overlaps with the start of "AAAT".
+# "GAAA" does but "AAAT" doesn't though both are in the cache. The cache now contains this:
+#
+# {("GAAA", "AAAA"): true, ("AAAT", "AAAA"): false}
+#
+# Next we will check if "AAAA" overlaps at the end with the start of any read.
+# Only "AAAT" overlaps at the end of "AAAA" wiht k=3. Now we have:
+# 
+# {("GAAA", "AAAA"): true, ("AAAT", "AAAA"): false, 
+#  ("AAAA", "GAAA"): false, ("AAAA", "AAAT"): true}
+#
+# Here's where things get interesting. For the next read, "AAAT", we want to know whether any
+# reads overlap with it at the start. We first check "AAAA". But we already computed 
+# "AAAA".overlapsWithStartOf("AAAT)! It's in the cache! This is the source of the cache hits
+# during the first round of filtering.
 var overlapCache = initTable[(string, string), bool]()
 var overlapCacheHit = 0
 var overlapCacheMiss = 0
@@ -27,8 +48,6 @@ proc overlapsWithStartOf*(a: string, b: string, k: int, cache = true): bool =
 
   if cache and (a, b) in overlapCache:
     overlapCacheHit += 1
-    # if iteration == 1:
-      # echo &"{a}, {b}"
     return overlapCache[(a, b)]
   overlapCacheMiss += 1
   let kmer = b[0..<k]
