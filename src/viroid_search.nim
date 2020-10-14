@@ -89,10 +89,10 @@ proc overlapsWithStartOf*(a: string, b: string, k: int, cache = true): bool =
   return false
 
 
-proc main(path: string, k: int, cache: bool) =
-  if not cache:
+proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false): Table[string, string] =
+  if not cache and verbose:
     styledEcho fgYellow, "[Warn] ", fgDefault, "Cache is disabled!"
-  styledEcho fgCyan, "[Info] ", fgDefault, &"Loading reads from {path}..."
+  if verbose: styledEcho fgCyan, "[Info] ", fgDefault, &"Loading reads from {path}..."
 
   # read and deduplicate the input sequences
   var sequences = initTable[string, string]()
@@ -115,10 +115,11 @@ proc main(path: string, k: int, cache: bool) =
     for _, kmer in sequence.kmersWithIndices(k):
       if kmersToSeqs.hasKeyOrPut(kmer, toHashSet([sequence])):
         kmersToSeqs[kmer].incl(sequence)
+  # echo kmersToSeqs
         
   if tooShortReads > 0:
-    styledEcho fgYellow, "[Warn] ", fgDefault, &"{tooShortReads} reads rejected for being less than {k} nt long."
-  styledEcho fgCyan, "[Info] ", fgDefault, &"Loaded {sequences.len} unique reads from {totalReads} total reads. Beginning filtering..."
+    if verbose: styledEcho fgYellow, "[Warn] ", fgDefault, &"{tooShortReads} reads rejected for being less than {k} nt long."
+  if verbose: styledEcho fgCyan, "[Info] ", fgDefault, &"Loaded {sequences.len} unique reads from {totalReads} total reads. Beginning filtering..."
 
   proc checkForOverlaps(sequence: string, sequencesToCheck: HashSet[string], start: bool): bool =
     ## Checks if any element of `sequences` overlap with the start of `sequence`
@@ -132,18 +133,26 @@ proc main(path: string, k: int, cache: bool) =
   proc removeFromKmersTable(sequence: string): void = 
      for i, kmer in sequence.kmersWithIndices(k):
           kmersToSeqs[kmer].excl(sequence)
+          # if kmersToSeqs[kmer].card == 0:
+          #   kmersToSeqs.del(kmer)
 
   var tsrsRemoved = 1 
+  var seqsProcessed = 0
   var seqsToCheckForStartOverlaps: HashSet[string]
   var seqsToCheckForEndOverlaps: HashSet[string]
 
   while tsrsRemoved != 0:
     tsrsRemoved = 0
+    seqsProcessed = 0
     iteration += 1
     overlapCacheHit = 0
     overlapCacheMiss = 0
 
     for sequence in internalSmallRnas:
+      seqsProcessed += 1
+      if verbose and showProgress and seqsProcessed mod 2000 == 0:
+        stdout.styledWrite fgCyan, "[Info] ", fgDefault, &"Iteration: {iteration}, Terminal Reads Removed: {tsrsRemoved}, Remaining Reads: {internalSmallRnas.card}\r"
+        stdout.flushFile
 
       # check if start kmer overlaps with any sequence
       seqsToCheckForStartOverlaps = kmersToSeqs[sequence[0..<k]]
@@ -162,16 +171,16 @@ proc main(path: string, k: int, cache: bool) =
         removeFromKmersTable(sequence)
         internalSmallRnas.excl(sequence)
         continue
-    
     stdout.eraseLine
-    styledEcho fgCyan, "[Info] ", fgDefault, &"Iteration: {iteration}, ", &"Terminal Reads Removed: {tsrsRemoved}, Remaining Reads: {internalSmallRnas.card}, Cache hit rate: {(overlapCacheHit / (overlapCacheMiss + overlapCacheHit))*100.0:.1f}%"
-  styledEcho fgGreen, "[DONE] ", fgDefault, &"Filtering complete. {internalSmallRnas.card} remaining reads. 🚀"
-  for sequence in toSeq(internalSmallRnas):
-    echo ">", sequences[sequence]
-    echo sequence
 
+    if verbose: styledEcho fgCyan, "[Info] ", fgDefault, &"Iteration: {iteration}, Terminal Reads Removed: {tsrsRemoved}, Remaining Reads: {internalSmallRnas.card}, Cache hit rate: {(overlapCacheHit / (overlapCacheMiss + overlapCacheHit))*100.0:.1f}%"
+  if verbose: styledEcho fgGreen, "[DONE] ", fgDefault, &"Filtering complete. {internalSmallRnas.card} remaining reads. 🚀"
+  for sequence in toSeq(internalSmallRnas):
+    result[sequence] = sequences[sequence]
 when isMainModule:
   var params = commandLineParams()
   var fp = params[0]
   var k = params[1].parseInt
-  main(fp, k, cache=false)
+  for k, v in main(fp, k, cache=true, showProgress=false, verbose=true):
+    echo ">", v
+    echo k
