@@ -34,8 +34,8 @@ proc simulateReads(x: string, k: Positive): seq[string] =
   for i, kmer in x.kmersWithIndices(21):
     result.add(kmer)
   
-proc simulateViroidReads(x: Positive): seq[string] = 
-  result = simulateReads(randomDimer(), x)
+proc simulateViroidReads(k: Positive): seq[string] = 
+  result = simulateReads(randomDimer(), k)
 
 proc writeReads(reads: seq[string]): void {.discardable.} =
   var testFilepath = open(TEST_FP, mode=fmWrite)
@@ -87,4 +87,15 @@ suite "test filtering":
     var vdReads = viroid1.simulateReads(21) & viroid1.simulateReads(24) & viroid2.simulateReads(21) & viroid2.simulateReads(24) 
     var reads = vdReads & randomReads(21)
     writeReads(reads)
+    check toSeq(main(TEST_FP, 17).keys).toHashSet == vdReads.toHashSet
+
+  test "Running twice doesn't affect result":
+    var vdReads = simulateViroidReads(21)
+    var reads = vdReads & randomReads(21, 2000)
+    writeReads(reads)
+    var lastResult = toSeq(main(TEST_FP, 17).keys)
+    check lastResult.toHashSet == vdReads.toHashSet
+
+    # Save the previous output and then rereun it
+    writeReads(lastResult)
     check toSeq(main(TEST_FP, 17).keys).toHashSet == vdReads.toHashSet
