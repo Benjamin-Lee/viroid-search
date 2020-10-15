@@ -1,6 +1,5 @@
 # This is just an example to get you started. A typical hybrid package
 # uses this file as the main entry point of the application.
-# import nimprof
 import bioseq
 import tables
 import sequtils
@@ -91,8 +90,8 @@ proc overlapsWithStartOf*(a: string, b: string, k: int, cache = true): bool =
 
 proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false): Table[string, string] =
   if not cache and verbose:
-    styledEcho fgYellow, "[Warn] ", fgDefault, "Cache is disabled!"
-  if verbose: styledEcho fgCyan, "[Info] ", fgDefault, &"Loading reads from {path}..."
+    stderr.styledWriteLine fgYellow, "[Warn] ", fgDefault, "Cache is disabled!"
+  if verbose: stderr.styledWriteLine fgCyan, "[Info] ", fgDefault, &"Loading reads from {path}..."
 
   # read and deduplicate the input sequences
   var sequences = initTable[string, string]()
@@ -118,8 +117,8 @@ proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false)
   # echo kmersToSeqs
         
   if tooShortReads > 0:
-    if verbose: styledEcho fgYellow, "[Warn] ", fgDefault, &"{tooShortReads} reads rejected for being less than {k} nt long."
-  if verbose: styledEcho fgCyan, "[Info] ", fgDefault, &"Loaded {sequences.len} unique reads from {totalReads} total reads. Beginning filtering..."
+    if verbose: stderr.styledWriteLine fgYellow, "[Warn] ", fgDefault, &"{tooShortReads} reads rejected for being less than {k} nt long."
+  if verbose: stderr.styledWriteLine fgCyan, "[Info] ", fgDefault, &"Loaded {sequences.len} unique reads from {totalReads} total reads. Beginning filtering..."
 
   proc checkForOverlaps(sequence: string, sequencesToCheck: HashSet[string], start: bool): bool =
     ## Checks if any element of `sequences` overlap with the start of `sequence`
@@ -133,26 +132,26 @@ proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false)
   proc removeFromKmersTable(sequence: string): void = 
      for i, kmer in sequence.kmersWithIndices(k):
           kmersToSeqs[kmer].excl(sequence)
-          # if kmersToSeqs[kmer].card == 0:
-          #   kmersToSeqs.del(kmer)
 
   var tsrsRemoved = 1 
   var seqsProcessed = 0
+  var seqsToProcess = 0
   var seqsToCheckForStartOverlaps: HashSet[string]
   var seqsToCheckForEndOverlaps: HashSet[string]
 
   while tsrsRemoved != 0:
     tsrsRemoved = 0
     seqsProcessed = 0
+    seqsToProcess = internalSmallRnas.card
     iteration += 1
     overlapCacheHit = 0
     overlapCacheMiss = 0
 
     for sequence in internalSmallRnas:
       seqsProcessed += 1
-      if verbose and showProgress and seqsProcessed mod 2000 == 0:
-        stdout.styledWrite fgCyan, "[Info] ", fgDefault, &"Iteration: {iteration}, Terminal Reads Removed: {tsrsRemoved}, Remaining Reads: {internalSmallRnas.card}\r"
-        stdout.flushFile
+      if verbose and showProgress and seqsProcessed mod 5000 == 0:
+        stderr.styledWrite fgCyan, "[Info] ", fgDefault, &"Iteration: {iteration}, {seqsProcessed} reads processed ({(seqsProcessed / (seqsToProcess))*100.0:.1f}%)\r"
+        stderr.flushFile
 
       # check if start kmer overlaps with any sequence
       seqsToCheckForStartOverlaps = kmersToSeqs[sequence[0..<k]]
@@ -171,16 +170,45 @@ proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false)
         removeFromKmersTable(sequence)
         internalSmallRnas.excl(sequence)
         continue
-    stdout.eraseLine
 
-    if verbose: styledEcho fgCyan, "[Info] ", fgDefault, &"Iteration: {iteration}, Terminal Reads Removed: {tsrsRemoved}, Remaining Reads: {internalSmallRnas.card}, Cache hit rate: {(overlapCacheHit / (overlapCacheMiss + overlapCacheHit))*100.0:.1f}%"
-  if verbose: styledEcho fgGreen, "[DONE] ", fgDefault, &"Filtering complete. {internalSmallRnas.card} remaining reads. 🚀"
+    if verbose: stderr.styledWriteLine fgCyan, "[Info] ", fgDefault, &"Iteration: {iteration}, Terminal Reads Removed: {tsrsRemoved}, Remaining Reads: {internalSmallRnas.card}, Cache hit rate: {(overlapCacheHit / (overlapCacheMiss + overlapCacheHit))*100.0:.1f}%"
+  if verbose: stderr.styledWriteLine fgGreen, "[DONE] ", fgDefault, &"Filtering complete. {internalSmallRnas.card} remaining reads. 🚀"
   for sequence in toSeq(internalSmallRnas):
     result[sequence] = sequences[sequence]
 when isMainModule:
-  var params = commandLineParams()
-  var fp = params[0]
-  var k = params[1].parseInt
-  for k, v in main(fp, k, cache=true, showProgress=false, verbose=true):
-    echo ">", v
-    echo k
+
+  import argparse
+  import strutils
+
+  when not defined(danger):
+    styledEcho fgYellow, "[Warn] ", fgDefault, "Not compiled as dangerous release. This may be slow!"
+
+  var p = newParser("viroid_search"):
+    arg("filepath")
+    option("-k", help="The minimum k-mer overlap", default="17")
+    option("-o", "--output", help="The output file. If not give, will default to stdout", default="stdout")
+    flag("-c", "--cache", help="If present, use a cache.")
+    flag("-q", "--quiet")
+    run:
+      # Decide whether to write to stdout or a file
+      var f: File
+      if opts.output == "stdout":
+        f = stdout
+      else:
+        if existsFile(opts.output):
+          echo "Output file already exists. Aborting..."
+          quit(1)
+        f = open(opts.output, fmWrite)
+
+      if not existsFile(opts.filepath):
+        echo "Input file does not exist. Aborting..."
+        quit(1)
+
+      # Run the main filtering proc and write out as FASTA
+      for k, v in main(opts.filepath, opts.k.parseInt, cache=opts.cache, showProgress=true, verbose=not opts.quiet):
+        f.writeLine ">", v
+        f.writeLine k
+      f.close
+  
+  var args = if commandLineParams().len == 0: @["--help"] else: commandLineParams() # if no args given, show help
+  p.run(args)
