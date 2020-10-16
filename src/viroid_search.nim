@@ -98,7 +98,7 @@ proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false)
   var tooShortReads = 0
   var totalReads = 0
   for id, sequence in fasta(path):
-    if sequence.len < k:
+    if sequence.len <= k:
       tooShortReads += 1
       continue
     sequences[sequence] = id
