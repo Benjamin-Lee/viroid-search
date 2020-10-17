@@ -56,8 +56,7 @@ suite "test filtering":
     check toSeq(main(TEST_FP, 17).keys).toHashSet() == reads.toHashSet()
 
   test "Eliminate 21nt reads from a monomer":
-    var reads = randomDna(1000).simulateReads(21)
-    writeReads(reads)
+    writeReads(randomDna(1000).simulateReads(21))
     check main(TEST_FP, 17).len == 0
   
   test "Eliminate 21nt random reads":
@@ -70,32 +69,33 @@ suite "test filtering":
 
   test "Filter mix of one viroid and nonviroid 21nt reads":
     var vdReads = simulateViroidReads(21)
-    var reads = vdReads & randomReads(21)
-    writeReads(reads)
+    writeReads(vdReads & randomReads(21))
     check toSeq(main(TEST_FP, 17).keys).toHashSet == vdReads.toHashSet
 
   test "Filter mix of 21nt and 24nt reads from one viroid":
     var viroid = randomDimer()
     var vdReads = viroid.simulateReads(21) & viroid.simulateReads(24)
-    var reads = vdReads & randomReads(21)
-    writeReads(reads)    
+    writeReads(vdReads & randomReads(21))    
     check toSeq(main(TEST_FP, 17).keys).toHashSet == vdReads.toHashSet
 
   test "Mix of 21nt and 24nt reads from multiple viroids":
     var viroid1 = randomDimer()
     var viroid2 = randomDimer()
     var vdReads = viroid1.simulateReads(21) & viroid1.simulateReads(24) & viroid2.simulateReads(21) & viroid2.simulateReads(24) 
-    var reads = vdReads & randomReads(21)
-    writeReads(reads)
+    writeReads(vdReads & randomReads(21))
     check toSeq(main(TEST_FP, 17).keys).toHashSet == vdReads.toHashSet
 
   test "Running twice doesn't affect result":
     var vdReads = simulateViroidReads(21)
-    var reads = vdReads & randomReads(21, 2000)
-    writeReads(reads)
+    writeReads(vdReads & randomReads(21, 2000))
     var lastResult = toSeq(main(TEST_FP, 17).keys)
     check lastResult.toHashSet == vdReads.toHashSet
 
     # Save the previous output and then rereun it
     writeReads(lastResult)
+    check toSeq(main(TEST_FP, 17).keys).toHashSet == vdReads.toHashSet
+
+  test "Reads with same start and stop k-mer":
+    var vdReads = simulateViroidReads(24)
+    writeReads(vdReads & "CTAAGGGCTAAGGGCTAAGGGCTA")
     check toSeq(main(TEST_FP, 17).keys).toHashSet == vdReads.toHashSet
