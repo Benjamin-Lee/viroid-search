@@ -1,10 +1,12 @@
 nimcache/
 nimblecache/
 htmldocs/
-*.fa*
 
 # Ignore files with no extensions (compiled binaries) except LICENSE
 *
 !/**/
 !*.*
 !LICENSE
+
+# Ignore FASTA files
+*.fa*
