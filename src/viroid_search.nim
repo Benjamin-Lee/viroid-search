@@ -196,7 +196,7 @@ when isMainModule:
   var p = newParser("viroid_search"):
     arg("filepath")
     option("-k", help="The minimum k-mer overlap", default="17")
-    option("-o", "--output", help="The output file. If not give, will default to stdout", default="stdout")
+    option("-o", "--output", help="The output file. If not given, will default to stdout", default="stdout")
     flag("-c", "--cache", help="If present, use a cache.")
     flag("-q", "--quiet")
     run:
