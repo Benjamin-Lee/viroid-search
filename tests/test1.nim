@@ -97,5 +97,12 @@ suite "test filtering":
 
   test "Reads with same start and stop k-mer":
     var vdReads = simulateViroidReads(24)
-    writeReads(vdReads & "CTAAGGGCTAAGGGCTAAGGGCTA")
+    writeReads(vdReads & "CTAAGGGCTAAGGGCTAAGGGCTA" & randomReads(24))
     check toSeq(main(TEST_FP, 17).keys).toHashSet == vdReads.toHashSet
+
+  test "Filter two viroids from a million reads":
+    var viroid1 = randomDimer()
+    var viroid2 = randomDimer()
+    var vdReads = viroid1.simulateReads(21) & viroid1.simulateReads(24) & viroid2.simulateReads(21) & viroid2.simulateReads(24) 
+    writeReads(vdReads & randomReads(21, 500000) & randomReads(24, 500000))
+    check toSeq(main(TEST_FP, 17).keys).toHashSet == vdReads.toHashSet 
