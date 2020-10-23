@@ -49,6 +49,14 @@ proc overlapsWithStartOf*(a: Dna, b: Dna, k: int, cache = true): bool =
   if cache: overlapCache[(a, b)] = false
   return false
 
+iterator readFast(path: string): Record[Dna] =
+  # Use the correct parser depending on the file extension
+  var mode = if path.splitFile.ext.toLowerAscii in [".fastq", ".fq"]: "fastq" else: "fasta"
+  if mode == "fasta":
+    for record in readFasta[Dna](path): yield record
+  elif mode == "fastq":
+    for record in readFastq[Dna](path): yield record
+
 # Needed overrides to only compare sequences in hashsets
 import hashes
 proc hash(x: Record[Dna]): Hash = hash($x) 
@@ -64,7 +72,8 @@ proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false)
   var internalSmallRnas = HashSet[Record[Dna]]()
   var tooShortReads = 0
   var totalReads = 0
-  for record in readFasta[Dna](path):
+
+  for record in readFast(path):
     if record.len <= k:
       tooShortReads += 1
       continue
@@ -155,9 +164,10 @@ when isMainModule:
   var p = newParser("viroid_search"):
     arg("filepath")
     option("-k", help="The minimum k-mer overlap", default="17")
-    option("-o", "--output", help="The output file. If not given, will default to stdout", default="stdout")
+    option("-o", "--output", help="The output file. Output format (FASTA or FASTQ) will be the same as input.", default="stdout")
     flag("-c", "--cache", help="If present, use a cache.")
     flag("-q", "--quiet")
+    flag("-p", "--preserve-duplicates", help="Whether to output multiples reads with identical sequences")
     run:
       # Decide whether to write to stdout or a file
       var f: File
@@ -165,17 +175,31 @@ when isMainModule:
         f = stdout
       else:
         if fileExists(opts.output):
-          error "Output file already exists. Aborting..."
+          error "Output file already exists."
           quit(1)
         f = open(opts.output, fmWrite)
 
       if not fileExists(opts.filepath):
-        error "Input file does not exist. Aborting..."
+        error "Input file does not exist."
         quit(1)
 
-      # Run the main filtering proc and write out as FASTA
-      for record in main(opts.filepath, opts.k.parseInt, cache=opts.cache, showProgress=true, verbose=not opts.quiet):
-        f.writeLine record.asFasta
+      # Run the main filtering proc and write out
+      var filteringResult = main(opts.filepath, opts.k.parseInt, cache=opts.cache, showProgress=true, verbose=not opts.quiet)
+      for record in filteringResult:
+        if opts.filepath.splitFile.ext.toLowerAscii in [".fq", ".fastq"]:
+          f.writeLine record.asFastq
+        else:
+          f.writeLine record.asFasta
+
+      # optionally, go back through the input reads and output those that were removed as duplicates
+      if opts.preserveDuplicates:
+        for record in readFast(opts.filepath):
+          if record in filteringResult and record.description != filteringResult[record].description:
+            if opts.filepath.splitFile.ext.toLowerAscii in [".fq", ".fastq"]:
+              f.writeLine record.asFastq
+            else:
+              f.writeLine record.asFasta
+
       f.close
   
   var args = if commandLineParams().len == 0: @["--help"] else: commandLineParams() # if no args given, show help
