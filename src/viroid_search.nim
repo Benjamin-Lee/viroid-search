@@ -2,35 +2,14 @@
 # uses this file as the main entry point of the application.
 import bioseq
 import tables
-import sequtils
 import sets
 import strutils
 import terminal
 import strformat
 import os
+import std/enumerate
 
-# A note on cache hit rates during the first iteration
-#
-# Why should there be any cache hits during the first round of filtering?
-# In theory, every read we're looking at is new. What we're missing is that,
-# for each read, there are actually two overlap checks: the one at the start and the end.
-# Imagine that our reads are "AAAA", "AAAT", and "GAAA" and that k=3.
-# First, we'll check if "AAAT" and "GAAA" overlaps with the start of "AAAT".
-# "GAAA" does but "AAAT" doesn't though both are in the cache. The cache now contains this:
-#
-# {("GAAA", "AAAA"): true, ("AAAT", "AAAA"): false}
-#
-# Next we will check if "AAAA" overlaps at the end with the start of any read.
-# Only "AAAT" overlaps at the end of "AAAA" wiht k=3. Now we have:
-# 
-# {("GAAA", "AAAA"): true, ("AAAT", "AAAA"): false, 
-#  ("AAAA", "GAAA"): false, ("AAAA", "AAAT"): true}
-#
-# Here's where things get interesting. For the next read, "AAAT", we want to know whether any
-# reads overlap with it at the start. We first check "AAAA". But we already computed 
-# "AAAA".overlapsWithStartOf("AAAT)! It's in the cache! This is the source of the cache hits
-# during the first round of filtering.
-var overlapCache = initTable[(Record[Dna], Record[Dna]), bool]()
+var overlapCache = initTable[(Dna, Dna), bool]()
 var overlapCacheHit = 0
 var overlapCacheMiss = 0
 var iteration = 0
@@ -42,58 +21,32 @@ template warn(message: string) = styledWrite(fgYellow, "warn", message)
 template error(message: string) = styledWrite(fgRed, "fail", message)
 template success(message: string) = styledWrite(fgGreen, "done", message)
 
-proc overlapsWithStartOf*(a: Record[Dna], b: Record[Dna], k: int, cache = true): bool = 
+proc overlapsWithStartOf*(a: Dna, b: Dna, k: int, cache = true): bool = 
   ## Checks whether the end of `a` overlaps with the start (left) of `b` by at least `k` bases.
   runnableExamples:
+    import bioseq
     # the last three of `a` and first three of `b` overlap
-    assert "ATGCAGA".overlapsWithStartOf("AGATTAGATA", 3) == true
+    assert "ATGCAGA".toDna.overlapsWithStartOf("AGATTAGATA".toDna, 3) == true
     # here, the last three are not equivalent to the first three but there is still an overlap
-    assert "GGCCAAGCCC".overlapsWithStartOf("GCCCAGGTATGC", 3) == true
+    assert "GGCCAAGCCC".toDna.overlapsWithStartOf("GCCCAGGTATGC".toDna, 3) == true
     # note that CGA (first three bases of `b`) also occurs at the start of `a`
-    assert "CGATATTTCGATA".overlapsWithStartOf("GATATCAGAA", 3) == true
+    assert "CGATATTTCGATA".toDna.overlapsWithStartOf("GATATCAGAA".toDna, 3) == true
+    # if `b` is a substring of `a` it doesn't count as overlapping
+    assert "CCATG".toDna.overlapsWithStartOf("CATG".toDna, 3) == false
 
   if cache and (a, b) in overlapCache:
     overlapCacheHit += 1
     return overlapCache[(a, b)]
   overlapCacheMiss += 1
   let kmer = b[0..<k]
-
   # find the k-mer's indices in `a`
   # note that, when called here, we already know that the k-mer is somewhere in the sequence
-  var index = 0
-  for kmerInA in a.kmers(k):
-    if kmerInA == kmer:
-      # This next part is a bit complex, so we'll take it step by step. 
-      # We need to check if any potential overlap of `a` is actually an overlap.
-      # For example, let a = "ILIKECOOKINGJUSTTOCOOK". b ="COOKINGISFUN", and k = 3.
-      # The start of `b` is "COO", which appears twice in `a`.
-      # However, the first time "COO" appears in `a` *is not* an overlap but the second is.
-      # We're going to determine whether `a` continues with `b[0..min(b.high, a.high - index)`,
-      # starting from the k-mer's index and continuing as far in `b` as possible.
-      # To do this, we need to calculate how much of `b` we can check for continuation in `a`. 
-      # Why? As expected, `"helloworld".continuesWith("world", 5) == true`.
-      # However, `"helloworld".continuesWith("worldly", 5) != true` due to the fact that
-      # "worldly" is not a substring of "helloworld".
-      # Therefore, we need `min(b.high, a.high - index)` since there are two cases:
-      # 
-      # 1. either the rest of the `b` is potentially fully contained as a substring or
-      # 2. `b` is too long to be a substring even if it overlaps perfectly
-      #
-      # Going back to the earlier exanple, consider that, from the first k-mer match on,
-      # `"COOKINGJUSTTOCOOK".len` < `"COOKINGISFUN".len`. Thus, we need to use the entire 
-      # sequence of `b` when checking if `a` continues with `b`.
-      # 
-      # With the second k-mer match, "COOK", not all of `b` could be contained within `a`
-      # from the k-mer overlap index onwards. Thus, we need to only use the first n bases
-      # of `b`. How many? The number of letters of "COOK", which is the distance of the
-      # overlap index from the end of the sequence, i.e. `a.high - index`.
-      if ($a).endsWith($b[0..min(b.high, a.high - index)]):
-        if cache:
-          overlapCache[(a, b)] = true
+  for index, kmerInA in enumerate(a.kmers(k)):
+    # see notes.md section for explanation of this expression
+    if kmerInA == kmer and b.high > a.high - index and a.endsWith(b[0..min(b.high, a.high - index)]):
+        if cache: overlapCache[(a, b)] = true
         return true
-    index += 1
-  if cache:
-    overlapCache[(a, b)] = false
+  if cache: overlapCache[(a, b)] = false
   return false
 
 # Needed overrides to only compare sequences in hashsets
@@ -211,12 +164,12 @@ when isMainModule:
       if opts.output == "stdout":
         f = stdout
       else:
-        if existsFile(opts.output):
+        if fileExists(opts.output):
           error "Output file already exists. Aborting..."
           quit(1)
         f = open(opts.output, fmWrite)
 
-      if not existsFile(opts.filepath):
+      if not fileExists(opts.filepath):
         error "Input file does not exist. Aborting..."
         quit(1)
 
