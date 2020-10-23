@@ -30,7 +30,7 @@ import os
 # reads overlap with it at the start. We first check "AAAA". But we already computed 
 # "AAAA".overlapsWithStartOf("AAAT)! It's in the cache! This is the source of the cache hits
 # during the first round of filtering.
-var overlapCache = initTable[(string, string), bool]()
+var overlapCache = initTable[(Record[Dna], Record[Dna]), bool]()
 var overlapCacheHit = 0
 var overlapCacheMiss = 0
 var iteration = 0
@@ -42,7 +42,7 @@ template warn(message: string) = styledWrite(fgYellow, "warn", message)
 template error(message: string) = styledWrite(fgRed, "fail", message)
 template success(message: string) = styledWrite(fgGreen, "done", message)
 
-proc overlapsWithStartOf*(a: string, b: string, k: int, cache = true): bool = 
+proc overlapsWithStartOf*(a: Record[Dna], b: Record[Dna], k: int, cache = true): bool = 
   ## Checks whether the end of `a` overlaps with the start (left) of `b` by at least `k` bases.
   runnableExamples:
     # the last three of `a` and first three of `b` overlap
@@ -60,7 +60,8 @@ proc overlapsWithStartOf*(a: string, b: string, k: int, cache = true): bool =
 
   # find the k-mer's indices in `a`
   # note that, when called here, we already know that the k-mer is somewhere in the sequence
-  for index, kmerInA in a.kmersWithIndices(k):
+  var index = 0
+  for kmerInA in a.kmers(k):
     if kmerInA == kmer:
       # This next part is a bit complex, so we'll take it step by step. 
       # We need to check if any potential overlap of `a` is actually an overlap.
@@ -86,49 +87,54 @@ proc overlapsWithStartOf*(a: string, b: string, k: int, cache = true): bool =
       # from the k-mer overlap index onwards. Thus, we need to only use the first n bases
       # of `b`. How many? The number of letters of "COOK", which is the distance of the
       # overlap index from the end of the sequence, i.e. `a.high - index`.
-      if a.endsWith(b[0..min(b.high, a.high - index)]):
+      if ($a).endsWith($b[0..min(b.high, a.high - index)]):
         if cache:
           overlapCache[(a, b)] = true
         return true
+    index += 1
   if cache:
     overlapCache[(a, b)] = false
   return false
 
+# Needed overrides to only compare sequences in hashsets
+import hashes
+proc hash(x: Record[Dna]): Hash = hash($x) 
+proc `==`(x, y: Record): bool = x.sequence == y.sequence
 
-proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false): Table[string, string] =
+proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false): HashSet[Record[Dna]] =
   if not cache and verbose:
     warn "Cache is disabled!"
   if verbose: 
     info &"Loading reads from {path}..."
 
   # read and deduplicate the input sequences
-  var sequences = initTable[string, string]()
+  var internalSmallRnas = HashSet[Record[Dna]]()
   var tooShortReads = 0
   var totalReads = 0
-  for id, sequence in fasta(path):
-    if sequence.len <= k:
+  for record in readFasta[Dna](path):
+    if record.len <= k:
       tooShortReads += 1
       continue
-    sequences[sequence] = id
+    internalSmallRnas.incl(record)
     totalReads += 1
 
   # This will contain all of the viroid-derived sRNAs
   # at first, all reads are putative ISRs
-  var internalSmallRnas = toHashSet(toSeq(sequences.keys))
+  # var internalSmallRnas = toHashSet(toSeq(sequences.keys))
 
   # A mapping of k-mers to the sequences they occur in
-  var kmersToSeqs = initTable[string, HashSet[string]]()
-  for sequence, id in sequences.pairs():
-    for _, kmer in sequence.kmersWithIndices(k):
+  var kmersToSeqs = initTable[Dna, HashSet[Record[Dna]]]()
+  for sequence in internalSmallRnas:
+    for kmer in sequence.kmers(k):
       if kmersToSeqs.hasKeyOrPut(kmer, toHashSet([sequence])):
         kmersToSeqs[kmer].incl(sequence)
-        
+
   if tooShortReads > 0 and verbose: 
     warn &"{tooShortReads} reads rejected for being less than {k}nt long."
   if verbose: 
-    info &"Loaded {sequences.len} unique reads from {totalReads} total reads. Beginning filtering..."
+    info &"Loaded {internalSmallRnas.len} unique reads from {totalReads} total reads. Beginning filtering..."
 
-  proc checkForOverlaps(sequence: string, sequencesToCheck: HashSet[string], start: bool): bool =
+  proc checkForOverlaps(sequence: Record[Dna], sequencesToCheck: HashSet[Record[Dna]], start: bool): bool =
     ## Checks if any element of `sequences` overlap with the start of `sequence`
     for potentialOverlap in sequencesToCheck:
       if start and potentialOverlap.overlapsWithStartOf(sequence, k, cache=cache):
@@ -137,15 +143,15 @@ proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false)
         return true 
     return false
 
-  template removeFromKmersTable(sequence: string) = 
-    for i, kmer in sequence.kmersWithIndices(k):
-      kmersToSeqs[kmer].excl(sequence)
+  template removeFromKmersTable(sequence: Record[Dna]) = 
+    for kmer in sequence.kmers(k):
+      kmersToSeqs[kmer].excl(sequence.toRecord())
 
   var tsrsRemoved = 1 
   var seqsProcessed = 0
   var seqsToProcess = 0
-  var seqsToCheckForStartOverlaps: HashSet[string]
-  var seqsToCheckForEndOverlaps: HashSet[string]
+  var seqsToCheckForStartOverlaps: HashSet[Record[Dna]]
+  var seqsToCheckForEndOverlaps: HashSet[Record[Dna]]
 
   while tsrsRemoved != 0:
     tsrsRemoved = 0
@@ -183,8 +189,8 @@ proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false)
       info &"Iteration: {iteration}, Terminal Reads Removed: {tsrsRemoved}, Remaining Reads: {internalSmallRnas.card}, Cache hit rate: {(overlapCacheHit / (overlapCacheMiss + overlapCacheHit))*100.0:.1f}%"
   if verbose:
     success &"Filtering complete. {internalSmallRnas.card} remaining reads. 🚀"
-  for sequence in toSeq(internalSmallRnas):
-    result[sequence] = sequences[sequence]
+  return internalSmallRnas 
+
 when isMainModule:
 
   import argparse
@@ -215,9 +221,8 @@ when isMainModule:
         quit(1)
 
       # Run the main filtering proc and write out as FASTA
-      for k, v in main(opts.filepath, opts.k.parseInt, cache=opts.cache, showProgress=true, verbose=not opts.quiet):
-        f.writeLine ">", v
-        f.writeLine k
+      for record in main(opts.filepath, opts.k.parseInt, cache=opts.cache, showProgress=true, verbose=not opts.quiet):
+        f.writeLine record.asFasta
       f.close
   
   var args = if commandLineParams().len == 0: @["--help"] else: commandLineParams() # if no args given, show help

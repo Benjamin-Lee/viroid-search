@@ -12,37 +12,39 @@ import sequtils
 import strformat
 import sets
 import unittest
-import tables
 import os
 randomize()
 
 const TEST_FP = "test.fasta"
 
-proc randomDna(x: Positive): string = 
+proc randomDna(x: Positive): Dna = 
   for i in 0..x:
-    result &= sample(@["A", "T", "G", "C"])
+    result &= sample(@["A", "T", "G", "C"]).toDna
 
-proc randomDimer(): string = 
+proc randomDimer(): Dna = 
   result = randomDna(rand(200..400))
   result &= result
 
-proc randomReads(size: Positive, count: Positive = 1000): seq[string] = 
+proc randomReads(size: Positive, count: Positive = 1000): seq[Dna] = 
   for i in 0..count:
       result.add(randomDna(size))
 
-proc simulateReads(x: string, k: Positive): seq[string] =
-  for i, kmer in x.kmersWithIndices(21):
+proc simulateReads(x: Dna, k: Positive): seq[Dna] =
+  for kmer in x.kmers(21):
     result.add(kmer)
   
-proc simulateViroidReads(k: Positive): seq[string] = 
+proc simulateViroidReads(k: Positive): seq[Dna] = 
   result = simulateReads(randomDimer(), k)
 
-proc writeReads(reads: seq[string]): void {.discardable.} =
+proc writeReads(reads: seq[Dna]): void {.discardable.} =
   var testFilepath = open(TEST_FP, mode=fmWrite)
   for i in 0..reads.high:
     testFilepath.writeLine(&">{i}")
     testFilepath.writeLine(reads[i])
   testFilepath.close
+
+proc filteringResults(k=17): HashSet[Dna] =
+  toSeq(main(TEST_FP, 17)).mapIt(it.sequence).toHashSet
 
 suite "test filtering":
   discard tryRemoveFile(TEST_FP) # remove the file if it exists at first
@@ -53,56 +55,56 @@ suite "test filtering":
   test "Filter 21nt reads from one viroid":
     var reads = simulateViroidReads(21)
     writeReads(reads)
-    check toSeq(main(TEST_FP, 17).keys).toHashSet() == reads.toHashSet()
+    check filteringResults() == reads.toHashSet()
 
   test "Eliminate 21nt reads from a monomer":
     writeReads(randomDna(1000).simulateReads(21))
-    check main(TEST_FP, 17).len == 0
+    check filteringResults().len == 0
   
   test "Eliminate 21nt random reads":
     writeReads(randomReads(21))
-    check main(TEST_FP, 17).len == 0
+    check filteringResults().len == 0
 
   test "Eliminate reads of mixed length":
     writeReads(randomReads(21) & randomReads(22) & randomReads(50))
-    check main(TEST_FP, 17).len == 0
+    check filteringResults().len == 0
 
   test "Filter mix of one viroid and nonviroid 21nt reads":
     var vdReads = simulateViroidReads(21)
     writeReads(vdReads & randomReads(21))
-    check toSeq(main(TEST_FP, 17).keys).toHashSet == vdReads.toHashSet
+    check filteringResults() == vdReads.toHashSet
 
   test "Filter mix of 21nt and 24nt reads from one viroid":
     var viroid = randomDimer()
     var vdReads = viroid.simulateReads(21) & viroid.simulateReads(24)
     writeReads(vdReads & randomReads(21))    
-    check toSeq(main(TEST_FP, 17).keys).toHashSet == vdReads.toHashSet
+    check filteringResults() == vdReads.toHashSet
 
   test "Mix of 21nt and 24nt reads from multiple viroids":
     var viroid1 = randomDimer()
     var viroid2 = randomDimer()
     var vdReads = viroid1.simulateReads(21) & viroid1.simulateReads(24) & viroid2.simulateReads(21) & viroid2.simulateReads(24) 
     writeReads(vdReads & randomReads(21))
-    check toSeq(main(TEST_FP, 17).keys).toHashSet == vdReads.toHashSet
+    check filteringResults() == vdReads.toHashSet
 
   test "Running twice doesn't affect result":
     var vdReads = simulateViroidReads(21)
     writeReads(vdReads & randomReads(21, 2000))
-    var lastResult = toSeq(main(TEST_FP, 17).keys)
-    check lastResult.toHashSet == vdReads.toHashSet
+    var lastResult = filteringResults()
+    check lastResult == vdReads.toHashSet
 
     # Save the previous output and then rereun it
-    writeReads(lastResult)
-    check toSeq(main(TEST_FP, 17).keys).toHashSet == vdReads.toHashSet
+    writeReads(toSeq(lastResult))
+    check filteringResults() == vdReads.toHashSet
 
   test "Reads with same start and stop k-mer":
     var vdReads = simulateViroidReads(24)
-    writeReads(vdReads & "CTAAGGGCTAAGGGCTAAGGGCTA" & randomReads(24))
-    check toSeq(main(TEST_FP, 17).keys).toHashSet == vdReads.toHashSet
+    writeReads(vdReads & "CTAAGGGCTAAGGGCTAAGGGCTA".toDna & randomReads(24))
+    check filteringResults() == vdReads.toHashSet
 
   test "Filter two viroids from a million reads":
     var viroid1 = randomDimer()
     var viroid2 = randomDimer()
     var vdReads = viroid1.simulateReads(21) & viroid1.simulateReads(24) & viroid2.simulateReads(21) & viroid2.simulateReads(24) 
     writeReads(vdReads & randomReads(21, 500000) & randomReads(24, 500000))
-    check toSeq(main(TEST_FP, 17).keys).toHashSet == vdReads.toHashSet 
+    check filteringResults() == vdReads.toHashSet 
