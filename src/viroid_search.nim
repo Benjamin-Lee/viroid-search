@@ -92,7 +92,7 @@ proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false)
         kmersToSeqs[kmer].incl(sequence)
 
   if tooShortReads > 0 and verbose: 
-    warn &"{tooShortReads} reads rejected for being less than {k}nt long."
+    warn &"{tooShortReads} reads rejected for being less than or equal to {k}nt long."
   if verbose: 
     info &"Loaded {internalSmallRnas.len} unique reads from {totalReads} total reads. Beginning filtering..."
 
