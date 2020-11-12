@@ -30,7 +30,7 @@ proc randomReads(size: Positive, count: Positive = 1000): seq[Dna] =
       result.add(randomDna(size))
 
 proc simulateReads(x: Dna, k: Positive): seq[Dna] =
-  for kmer in x.kmers(21):
+  for kmer in x.kmers(k):
     result.add(kmer)
   
 proc simulateViroidReads(k: Positive): seq[Dna] = 
