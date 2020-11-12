@@ -102,6 +102,14 @@ suite "test filtering":
     writeReads(vdReads & "CTAAGGGCTAAGGGCTAAGGGCTA".toDna & randomReads(24))
     check filteringResults() == vdReads.toHashSet
 
+  test "Reads in either polarity are preserved":
+    var vdReads = simulateViroidReads(21)
+    # make all the reads from first half in the opposite polarity
+    for i in 0..int(vdReads.len / 2):
+      vdReads[i] = vdReads[i].reverseComplement
+    writeReads(vdReads)
+    check filteringResults() == vdReads.toHashSet 
+
   test "Filter two viroids from a million reads":
     var viroid1 = randomDimer()
     var viroid2 = randomDimer()
