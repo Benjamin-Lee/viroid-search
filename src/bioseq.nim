@@ -16,11 +16,12 @@ type
   
 template defineStrOprs(typ: typedesc) {.dirty.} =
   proc `$`*(x: typ): string {.borrow.}
-  proc `&`*(x, y: typ): typ = typ($x & $y)
+  proc `&`*(x, y: typ): typ = typ(x.string & y.string)
   proc `&=`*(x: var typ, y: typ) {.borrow.}
-  proc `[]`*[T, U](x: typ; h: HSlice[T, U]): typ = typ(($x)[h])
-  proc `[]`*(x: typ, i: int): typ = typ($($x)[i])
-  proc `[]`*(x: typ; i: BackwardsIndex): typ = typ($($x)[i])
+  proc `[]`*[T, U](x: typ; h: HSlice[T, U]): typ = typ(x.string[h])
+  proc `[]`*(x: typ, i: int): typ = typ(x.string[i..i])
+  proc `[]`*(x: typ; i: BackwardsIndex): typ = typ(x.string[i..i])
+  proc `[]=`*[T, U](s: var typ, x: HSlice[T, U], b: typ) = s.string[x] = b.string
   proc `==`*(x, y: typ): bool {.borrow.}
   proc `<`*(x, y: typ): bool {.borrow.}
   proc `<=`*(x, y: typ): bool {.borrow.}
@@ -34,12 +35,13 @@ template defineStrOprs(typ: typedesc) {.dirty.} =
   proc contains*(x, y: typ): bool {.borrow.}
   converter toSequence*(x: Record[typ]): typ = x.sequence
   iterator items*(x: typ): typ =
-    for base in $x:
+    for base in x.string:
       yield ($base).typ
   iterator pairs*(x: typ): tuple[key: int, val: typ] =
     var i = 0
     for base in x:
       yield (i, base)
+      inc(i)
   
 defineStrOprs(Dna)
 defineStrOprs(Rna)
@@ -62,53 +64,16 @@ proc hash*(x: Record): Hash =
 proc `==`*(x, y: Record): bool = 
   x.sequence == y.sequence and x.description == y.description and x.quality == y.quality  
 
-const dnaComplements*: array[15, (Dna, Dna)] = {
-  Dna"A": Dna"T",
-  Dna"T": Dna"A",
-  Dna"G": Dna"C",
-  Dna"C": Dna"G",
-  Dna"Y": Dna"R",
-  Dna"R": Dna"Y",
-  Dna"S": Dna"S",
-  Dna"W": Dna"W",
-  Dna"K": Dna"M",
-  Dna"M": Dna"K",
-  Dna"B": Dna"V",
-  Dna"D": Dna"H",
-  Dna"H": Dna"D",
-  Dna"V": Dna"B",
-  Dna"N": Dna"N"
-}
-const rnaComplements*: array[15, (Rna, Rna)] = {
-  Rna"A": Rna"U",
-  Rna"U": Rna"A",
-  Rna"G": Rna"C",
-  Rna"C": Rna"G",
-  Rna"Y": Rna"R",
-  Rna"R": Rna"Y",
-  Rna"S": Rna"S",
-  Rna"W": Rna"W",
-  Rna"K": Rna"M",
-  Rna"M": Rna"K",
-  Rna"B": Rna"V",
-  Rna"D": Rna"H",
-  Rna"H": Rna"D",
-  Rna"V": Rna"B",
-  Rna"N": Rna"N"
-}
-const dnaComplementsTable: Table[Dna, Dna]= dnaComplements.toTable
-const rnaComplementsTable = rnaComplements.toTable
-
 proc asFasta*(x: Record): string = 
   result &= ">" & x.description & "\n"
-  result &= $x.sequence
+  result &= x.sequence.string
 proc asFastq*[T: Dna|Rna](x: Record[T]): string = 
   if x.sequence.len != x.quality.len:
     raise newException(CatchableError, "Quality string must be the same length as sequence")
   result &= "@" & x.description & "\n"
-  result &= $x.sequence & "\n"
+  result &= x.sequence.string & "\n"
   result &= "+\n"
-  result &= $x.quality
+  result &= x.quality
     
 proc gcContent*(x: NucleicAcid): float =
   for letter in $x:
@@ -124,9 +89,11 @@ proc gcContent*(x: NucleicAcid): float =
 iterator kmers*[T: BioString](x: T, k: Positive): T =
   for i in 0..(x.len - k):
     yield x[i ..< i + k]
+proc canonical*[T: Dna|Rna](x: T): T = 
+  min(x, x.reverseComplement)
 iterator canonicalKmers*[T: BioString](x: T, k: Positive): T =
   for kmer in x.kmers(k):
-    yield min(kmer, kmer.reverseComplement)
+    yield canonical(kmer)
 proc countKmers*[T: Dna|Rna](x: T, k: Positive): CountTable[T] =
   for kmer in x.kmers(k):
     result.inc(kmer)
@@ -136,19 +103,46 @@ func totalKmers*[T: Dna|Rna](x: T, k: Positive): Natural =
   else:
     return x.len - k + 1
 
-proc complement*[T: Dna|Rna](x: T): T =
-  when T is Dna:
-    var complements = dnaComplementsTable
-  when T is Rna:
-    var complements = rnaComplementsTable
-  for base in x:
-    result &= complements[base]
-
-proc reverseComplement*[T: Dna|Rna](x: T): T = 
-  for i in countdown(x.high, x.low):
-    result &= x[i]
-  result.complement
-
+proc reverseComplement*[T: Dna|Rna](x: T): T {.inline.}= 
+  result = newString(x.len).Dna
+  var i = x.high
+  var j = 0
+  while i >= 0:
+    result.string[i] = case x.string[j]:
+      of 'A':
+        when T is Dna: 'T' else: 'U'
+      of 'T', 'U':
+        'A'
+      of 'G':
+        'C'
+      of 'C':
+        'G'
+      of 'Y':
+        'R'
+      of 'R':
+        'Y'
+      of 'S':
+        'S'
+      of 'W':
+        'W'
+      of 'K':
+        'M'
+      of 'M':
+        'K'
+      of 'B':
+        'V'
+      of 'D':
+        'H'
+      of 'H':
+        'D'
+      of 'V':
+        'B'
+      of 'N':
+        'N'
+      else:
+        raise newException(CatchableError, "Invalid character in sequence")
+    inc(j)
+    dec(i)
 
 iterator readFasta*[T: BioString](filename: string): Record[T] =
   ## Iterate over the lines in a FASTA file, yielding one record at a time 

@@ -87,7 +87,7 @@ proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false)
   # A mapping of k-mers to the sequences they occur in
   var kmersToSeqs = initTable[Dna, HashSet[Record[Dna]]]()
   for sequence in internalSmallRnas:
-    for kmer in sequence.kmers(k):
+    for kmer in sequence.canonicalKmers(k):
       if kmersToSeqs.hasKeyOrPut(kmer, toHashSet([sequence])):
         kmersToSeqs[kmer].incl(sequence)
 
@@ -99,14 +99,14 @@ proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false)
   proc checkForOverlaps(sequence: Record[Dna], sequencesToCheck: HashSet[Record[Dna]], start: bool): bool =
     ## Checks if any element of `sequences` overlap with the start of `sequence`
     for potentialOverlap in sequencesToCheck:
-      if start and potentialOverlap.overlapsWithStartOf(sequence, k, cache=cache):
+      if start and (potentialOverlap.overlapsWithStartOf(sequence, k, cache=cache) or potentialOverlap.reverseComplement.overlapsWithStartOf(sequence, k, cache=cache)):
         return true
-      elif sequence.overlapsWithStartOf(potentialOverlap, k, cache=cache):
+      elif sequence.overlapsWithStartOf(potentialOverlap, k, cache=cache) or sequence.overlapsWithStartOf(potentialOverlap.reverseComplement, k, cache=cache):
         return true 
     return false
 
   template removeFromKmersTable(sequence: Record[Dna]) = 
-    for kmer in sequence.kmers(k):
+    for kmer in sequence.canonicalKmers(k):
       kmersToSeqs[kmer].excl(sequence.toRecord())
 
   var tsrsRemoved = 1 
@@ -130,7 +130,7 @@ proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false)
         stderr.flushFile
 
       # check if start kmer overlaps with any sequence
-      seqsToCheckForStartOverlaps = kmersToSeqs[sequence[0..<k]]
+      seqsToCheckForStartOverlaps = kmersToSeqs[sequence[0..<k].canonical]
       seqsToCheckForStartOverlaps.excl(sequence)
       if not sequence.checkForOverlaps(seqsToCheckForStartOverlaps, start=true):
         tsrsRemoved += 1
@@ -139,7 +139,7 @@ proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false)
         continue
 
       # check if end k-mer overlaps
-      seqsToCheckForEndOverlaps = kmersToSeqs[sequence[^k .. ^1]]
+      seqsToCheckForEndOverlaps = kmersToSeqs[sequence[^k .. ^1].canonical]
       seqsToCheckForEndOverlaps.excl(sequence)
       if not sequence.checkForOverlaps(seqsToCheckForEndOverlaps, start=false):
         tsrsRemoved += 1
