@@ -15,6 +15,9 @@ type
     description*: string
     quality*: string
   
+proc `==`*(a, b: Monomer): bool {.borrow.}
+proc `$`*(a: Monomer): string {.borrow.}
+
 template defineStrOprs(typ: typedesc) {.dirty.} =
   proc `$`*(x: typ): string {.borrow.}
   template `&`*(x, y: typ): typ = typ(x.string & y.string)
@@ -143,6 +146,40 @@ proc reverseComplement*[T: Dna|Rna](x: T): T =
         raise newException(CatchableError, "Invalid character in sequence")
     inc(j)
     dec(i)
+
+proc overlapsWithStartOf*(a: Dna, b: Dna, k: int): bool {.inline.}= 
+  ## Checks whether the end of `a` overlaps with the start (left) of `b` by at least `k` bases.
+  runnableExamples:
+    import bioseq
+    # the last three of `a` and first three of `b` overlap
+    assert "ATGCAGA".toDna.overlapsWithStartOf("AGATTAGATA".toDna, 3) == true
+    # here, the last three are not equivalent to the first three but there is still an overlap
+    assert "GGCCAAGCCC".toDna.overlapsWithStartOf("GCCCAGGTATGC".toDna, 3) == true
+    # note that CGA (first three bases of `b`) also occurs at the start of `a`
+    assert "CGATATTTCGATA".toDna.overlapsWithStartOf("GATATCAGAA".toDna, 3) == true
+    # if `b` is a substring of `a` it doesn't count as overlapping
+    assert "CCATG".toDna.overlapsWithStartOf("CATG".toDna, 3) == false
+  var posInB: int # where we are in `b`
+  var matchFound: bool # whether we're exiting because we found a match
+  for i in countdown(a.len - k, a.low):
+    # return early if you've reached the end of possible overlaps
+    if a.len - i >= b.len:
+      return false
+    # reset the iteration variables
+    posInB = 0
+    matchFound = true
+    # starting from i, iterate to the end of the sequence
+    for posInA in i..a.high:
+      # if the bases differ, it's no match
+      if a[posInA] != b[posInB]:
+        matchFound = false
+        break
+      # otherwise, check the next base
+      inc(posInB)
+    # exit early
+    if matchFound:
+      return true
+  return false
 
 iterator readFasta*[T: BioString](filename: string): Record[T] =
   ## Iterate over the lines in a FASTA file, yielding one record at a time 

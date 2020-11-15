@@ -9,36 +9,12 @@ import strformat
 import os
 import std/enumerate
 
-
-
 template styledWrite(color: ForegroundColor, level: string, message: string) =
   stderr.styledWriteLine color, "[", level.capitalizeAscii, "] ", fgDefault, message
 template info(message: string) = styledWrite(fgCyan, "info", message)
 template warn(message: string) = styledWrite(fgYellow, "warn", message)
 template error(message: string) = styledWrite(fgRed, "fail", message)
 template success(message: string) = styledWrite(fgGreen, "done", message)
-
-func overlapsWithStartOf*(a: Dna, b: Dna, k: int): bool = 
-  ## Checks whether the end of `a` overlaps with the start (left) of `b` by at least `k` bases.
-  runnableExamples:
-    import bioseq
-    # the last three of `a` and first three of `b` overlap
-    assert "ATGCAGA".toDna.overlapsWithStartOf("AGATTAGATA".toDna, 3) == true
-    # here, the last three are not equivalent to the first three but there is still an overlap
-    assert "GGCCAAGCCC".toDna.overlapsWithStartOf("GCCCAGGTATGC".toDna, 3) == true
-    # note that CGA (first three bases of `b`) also occurs at the start of `a`
-    assert "CGATATTTCGATA".toDna.overlapsWithStartOf("GATATCAGAA".toDna, 3) == true
-    # if `b` is a substring of `a` it doesn't count as overlapping
-    assert "CCATG".toDna.overlapsWithStartOf("CATG".toDna, 3) == false
-
-  let kmer = b[0..<k]
-  # find the k-mer's indices in `a`
-  # note that, when called here, we already know that the k-mer is somewhere in the sequence
-  for index, kmerInA in enumerate(a.kmers(k)):
-    # see notes.md section for explanation of this expression
-    if kmerInA == kmer and b.high > a.high - index and a.endsWith(b[0..min(b.high, a.high - index)]):
-        return true
-  return false
 
 iterator readFast(path: string): Record[Dna] =
   # Use the correct parser depending on the file extension
@@ -96,20 +72,22 @@ proc main*(path: string, k: int, cache=true, verbose=false, showProgress=false):
     ## Checks if any element of `sequences` overlap with the start of `sequence`
     for potentialOverlap in sequencesToCheck:
       if start:
-        if sequence in lastStartOverlap and lastStartOverlap[sequence] in internalSmallRnas:
+        if cache and sequence in lastStartOverlap and lastStartOverlap[sequence] in internalSmallRnas:
           inc(overlapCacheHit)
           return true
-        if (potentialOverlap.overlapsWithStartOf(sequence, k) or potentialOverlap.reverseComplement.overlapsWithStartOf(sequence, k)):
-          lastStartOverlap[sequence] = potentialOverlap
-          inc(overlapCacheMiss)
+        if potentialOverlap.overlapsWithStartOf(sequence, k) or potentialOverlap.reverseComplement.overlapsWithStartOf(sequence, k):
+          if cache:
+            lastStartOverlap[sequence] = potentialOverlap
+            inc(overlapCacheMiss)
           return true
       else:
-        if sequence in lastEndOverlap and lastEndOverlap[sequence] in internalSmallRnas:
+        if cache and sequence in lastEndOverlap and lastEndOverlap[sequence] in internalSmallRnas:
           inc(overlapCacheHit)
           return true
         if sequence.overlapsWithStartOf(potentialOverlap, k) or sequence.overlapsWithStartOf(potentialOverlap.reverseComplement, k):
-          inc(overlapCacheMiss)
-          lastEndOverlap[sequence] = potentialOverlap
+          if cache:
+            inc(overlapCacheMiss)
+            lastEndOverlap[sequence] = potentialOverlap
           return true 
     return false
 
