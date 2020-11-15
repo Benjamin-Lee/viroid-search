@@ -174,7 +174,7 @@ when isMainModule:
     arg("filepath")
     option("-k", help="The minimum k-mer overlap", default="17")
     option("-o", "--output", help="The output file. Output format (FASTA or FASTQ) will be the same as input.", default="stdout")
-    flag("--no-cache", help="If present, turn off caching.")
+    flag("-c", "--cache", help="If present, turn on caching.")
     flag("-q", "--quiet")
     flag("-p", "--preserve-duplicates", help="Whether to output multiples reads with identical sequences")
     run:
@@ -193,7 +193,7 @@ when isMainModule:
         quit(1)
 
       # Run the main filtering proc and write out
-      var filteringResult = main(opts.filepath, opts.k.parseInt, cache=not opts.noCache, showProgress=true, verbose=not opts.quiet)
+      var filteringResult = main(opts.filepath, opts.k.parseInt, cache=opts.cache, showProgress=true, verbose=not opts.quiet)
       for record in filteringResult:
         if opts.filepath.splitFile.ext.toLowerAscii in [".fq", ".fastq"]:
           f.writeLine record.asFastq
