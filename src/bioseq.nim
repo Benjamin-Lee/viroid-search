@@ -4,6 +4,7 @@ import hashes
 import tables
 
 type 
+  Monomer* = distinct char
   Prot* = distinct string
   Dna* = distinct string
   Rna* = distinct string
@@ -16,12 +17,13 @@ type
   
 template defineStrOprs(typ: typedesc) {.dirty.} =
   proc `$`*(x: typ): string {.borrow.}
-  proc `&`*(x, y: typ): typ = typ(x.string & y.string)
+  template `&`*(x, y: typ): typ = typ(x.string & y.string)
   proc `&=`*(x: var typ, y: typ) {.borrow.}
-  proc `[]`*[T, U](x: typ; h: HSlice[T, U]): typ = typ(x.string[h])
-  proc `[]`*(x: typ, i: int): typ = typ(x.string[i..i])
-  proc `[]`*(x: typ; i: BackwardsIndex): typ = typ(x.string[i..i])
-  proc `[]=`*[T, U](s: var typ, x: HSlice[T, U], b: typ) = s.string[x] = b.string
+  template `[]`*[T, U](x: typ; h: HSlice[T, U]): typ = typ(x.string[h])
+  template `[]`*(x: typ, i: int): Monomer = Monomer(x.string[i])
+  template `[]`*(x: typ; i: BackwardsIndex): Monomer = Monomer(x.string[i])
+  template `[]=`*[T, U](s: var typ, x: HSlice[T, U], b: typ) = s.string[x] = b.string
+  template `[]=`*(s: typ; i: int; val: Monomer) = s.string[i] = val.char
   proc `==`*(x, y: typ): bool {.borrow.}
   proc `<`*(x, y: typ): bool {.borrow.}
   proc `<=`*(x, y: typ): bool {.borrow.}
@@ -34,14 +36,12 @@ template defineStrOprs(typ: typedesc) {.dirty.} =
   proc continuesWith*(x, y: typ, start: Natural): bool {.borrow.}
   proc contains*(x, y: typ): bool {.borrow.}
   converter toSequence*(x: Record[typ]): typ = x.sequence
-  iterator items*(x: typ): typ =
+  iterator items*(x: typ): Monomer {.inline.}  =
     for base in x.string:
-      yield ($base).typ
-  iterator pairs*(x: typ): tuple[key: int, val: typ] =
-    var i = 0
-    for base in x:
-      yield (i, base)
-      inc(i)
+      yield Monomer(base)
+  iterator pairs*(x: typ): tuple[key: int, val: Monomer] {.inline.} =
+    for i, base in x.string:
+      yield (i, x[i])
   
 defineStrOprs(Dna)
 defineStrOprs(Rna)
@@ -89,7 +89,7 @@ proc gcContent*(x: NucleicAcid): float =
 iterator kmers*[T: BioString](x: T, k: Positive): T =
   for i in 0..(x.len - k):
     yield x[i ..< i + k]
-proc canonical*[T: Dna|Rna](x: T): T = 
+template canonical*[T: Dna|Rna](x: T): T = 
   min(x, x.reverseComplement)
 iterator canonicalKmers*[T: BioString](x: T, k: Positive): T =
   for kmer in x.kmers(k):
@@ -103,7 +103,7 @@ func totalKmers*[T: Dna|Rna](x: T, k: Positive): Natural =
   else:
     return x.len - k + 1
 
-proc reverseComplement*[T: Dna|Rna](x: T): T {.inline.}= 
+proc reverseComplement*[T: Dna|Rna](x: T): T =
   result = newString(x.len).Dna
   var i = x.high
   var j = 0
