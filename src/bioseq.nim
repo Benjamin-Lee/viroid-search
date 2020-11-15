@@ -166,6 +166,7 @@ iterator readFastq*[T: NucleicAcid](filename: string): Record[T] =
   for line in filename.lines:
     if linesRead mod 4 == 0:
       description = line
+      description.delete(0, 0) # remove the @
     elif linesRead mod 4 == 1:
       sequence = line
     elif linesRead mod 4 == 3:
