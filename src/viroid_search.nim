@@ -9,10 +9,7 @@ import strformat
 import os
 import std/enumerate
 
-var overlapCache = initTable[(Dna, Dna), bool]()
-var overlapCacheHit = 0
-var overlapCacheMiss = 0
-var iteration = 0
+
 
 template styledWrite(color: ForegroundColor, level: string, message: string) =
   stderr.styledWriteLine color, "[", level.capitalizeAscii, "] ", fgDefault, message
@@ -21,7 +18,7 @@ template warn(message: string) = styledWrite(fgYellow, "warn", message)
 template error(message: string) = styledWrite(fgRed, "fail", message)
 template success(message: string) = styledWrite(fgGreen, "done", message)
 
-proc overlapsWithStartOf*(a: Dna, b: Dna, k: int, cache = true): bool = 
+func overlapsWithStartOf*(a: Dna, b: Dna, k: int): bool = 
   ## Checks whether the end of `a` overlaps with the start (left) of `b` by at least `k` bases.
   runnableExamples:
     import bioseq
@@ -34,19 +31,13 @@ proc overlapsWithStartOf*(a: Dna, b: Dna, k: int, cache = true): bool =
     # if `b` is a substring of `a` it doesn't count as overlapping
     assert "CCATG".toDna.overlapsWithStartOf("CATG".toDna, 3) == false
 
-  if cache and (a, b) in overlapCache:
-    overlapCacheHit += 1
-    return overlapCache[(a, b)]
-  overlapCacheMiss += 1
   let kmer = b[0..<k]
   # find the k-mer's indices in `a`
   # note that, when called here, we already know that the k-mer is somewhere in the sequence
   for index, kmerInA in enumerate(a.kmers(k)):
     # see notes.md section for explanation of this expression
     if kmerInA == kmer and b.high > a.high - index and a.endsWith(b[0..min(b.high, a.high - index)]):
-        if cache: overlapCache[(a, b)] = true
         return true
-  if cache: overlapCache[(a, b)] = false
   return false
 
 iterator readFast(path: string): Record[Dna] =
@@ -59,10 +50,10 @@ iterator readFast(path: string): Record[Dna] =
 
 # Needed overrides to only compare sequences in hashsets
 import hashes
-proc hash(x: Record[Dna]): Hash = hash($x) 
+proc hash(x: Record[Dna]): Hash = hash(x.sequence) 
 proc `==`(x, y: Record): bool = x.sequence == y.sequence
 
-proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false): HashSet[Record[Dna]] =
+proc main*(path: string, k: int, cache=true, verbose=false, showProgress=false): HashSet[Record[Dna]] =
   if not cache and verbose:
     warn "Cache is disabled!"
   if verbose: 
@@ -96,13 +87,30 @@ proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false)
   if verbose: 
     info &"Loaded {internalSmallRnas.len} unique reads from {totalReads} total reads. Beginning filtering..."
 
+  var lastStartOverlap = initTable[Record[Dna], Record[Dna]](internalSmallRnas.card)
+  var lastEndOverlap = initTable[Record[Dna], Record[Dna]](internalSmallRnas.card)
+  var overlapCacheHit = 0
+  var overlapCacheMiss = 0
+
   proc checkForOverlaps(sequence: Record[Dna], sequencesToCheck: HashSet[Record[Dna]], start: bool): bool =
     ## Checks if any element of `sequences` overlap with the start of `sequence`
     for potentialOverlap in sequencesToCheck:
-      if start and (potentialOverlap.overlapsWithStartOf(sequence, k, cache=cache) or potentialOverlap.reverseComplement.overlapsWithStartOf(sequence, k, cache=cache)):
-        return true
-      elif sequence.overlapsWithStartOf(potentialOverlap, k, cache=cache) or sequence.overlapsWithStartOf(potentialOverlap.reverseComplement, k, cache=cache):
-        return true 
+      if start:
+        if sequence in lastStartOverlap and lastStartOverlap[sequence] in internalSmallRnas:
+          inc(overlapCacheHit)
+          return true
+        if (potentialOverlap.overlapsWithStartOf(sequence, k) or potentialOverlap.reverseComplement.overlapsWithStartOf(sequence, k)):
+          lastStartOverlap[sequence] = potentialOverlap
+          inc(overlapCacheMiss)
+          return true
+      else:
+        if sequence in lastEndOverlap and lastEndOverlap[sequence] in internalSmallRnas:
+          inc(overlapCacheHit)
+          return true
+        if sequence.overlapsWithStartOf(potentialOverlap, k) or sequence.overlapsWithStartOf(potentialOverlap.reverseComplement, k):
+          inc(overlapCacheMiss)
+          lastEndOverlap[sequence] = potentialOverlap
+          return true 
     return false
 
   template removeFromKmersTable(sequence: Record[Dna]) = 
@@ -112,6 +120,7 @@ proc main*(path: string, k: int, cache=false, verbose=false, showProgress=false)
   var tsrsRemoved = 1 
   var seqsProcessed = 0
   var seqsToProcess = 0
+  var iteration = 0
   var seqsToCheckForStartOverlaps: HashSet[Record[Dna]]
   var seqsToCheckForEndOverlaps: HashSet[Record[Dna]]
 
@@ -165,7 +174,7 @@ when isMainModule:
     arg("filepath")
     option("-k", help="The minimum k-mer overlap", default="17")
     option("-o", "--output", help="The output file. Output format (FASTA or FASTQ) will be the same as input.", default="stdout")
-    flag("-c", "--cache", help="If present, use a cache.")
+    flag("--no-cache", help="If present, turn off caching.")
     flag("-q", "--quiet")
     flag("-p", "--preserve-duplicates", help="Whether to output multiples reads with identical sequences")
     run:
@@ -184,7 +193,7 @@ when isMainModule:
         quit(1)
 
       # Run the main filtering proc and write out
-      var filteringResult = main(opts.filepath, opts.k.parseInt, cache=opts.cache, showProgress=true, verbose=not opts.quiet)
+      var filteringResult = main(opts.filepath, opts.k.parseInt, cache=not opts.noCache, showProgress=true, verbose=not opts.quiet)
       for record in filteringResult:
         if opts.filepath.splitFile.ext.toLowerAscii in [".fq", ".fastq"]:
           f.writeLine record.asFastq
