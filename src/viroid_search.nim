@@ -7,7 +7,6 @@ import strutils
 import terminal
 import strformat
 import os
-import std/enumerate
 
 template styledWrite(color: ForegroundColor, level: string, message: string) =
   stderr.styledWriteLine color, "[", level.capitalizeAscii, "] ", fgDefault, message
