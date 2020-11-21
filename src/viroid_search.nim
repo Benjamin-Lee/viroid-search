@@ -82,7 +82,7 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, cache=true, verb
       if not overlapPresent:
         tsrsRemoved += 1
         for kmer in sequence.canonicalKmers(k):
-          kmersToSeqs[kmer].excl(sequence.toRecord())
+          kmersToSeqs[kmer].excl(sequence)
         internalSmallRnas.excl(sequence)
         continue
 
