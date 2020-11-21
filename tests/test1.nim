@@ -11,23 +11,27 @@ import bioseq
 import sequtils
 import sets
 import unittest
+import std/enumerate
 randomize()
 
 proc randomDna(x: Positive): Dna = 
-  for i in 0..x:
-    result &= sample(@["A", "T", "G", "C"]).toDna
+  result = newString(x).toDna
+  for i in 0..<x:
+    result[i] = sample(@['A', 'T', 'G', 'C']).Monomer
 
 proc randomDimer(): Dna = 
   result = randomDna(rand(200..400))
   result &= result
 
 proc randomReads(size: Positive, count: Positive = 1000): seq[Record[Dna]] = 
-  for i in 0..count:
-      result.add(randomDna(size).toRecord)
+  result = newSeq[Record[Dna]](count)
+  for i in 0..<count:
+      result[i] = randomDna(size).toRecord
 
 proc simulateReads(x: Dna, k: Positive): seq[Record[Dna]] =
-  for kmer in x.kmers(k):
-    result.add(kmer.toRecord)
+  result = newSeq[Record[Dna]](x.totalKmers(k))
+  for i, kmer in enumerate(x.kmers(k)):
+    result[i] = kmer.toRecord
   
 proc simulateViroidReads(k: Positive): seq[Record[Dna]] = 
   result = simulateReads(randomDimer(), k)
