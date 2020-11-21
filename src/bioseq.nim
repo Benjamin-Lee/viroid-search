@@ -2,6 +2,7 @@ import strutils
 import strformat
 import hashes
 import tables
+import os
 
 type 
   Monomer* = distinct char
@@ -211,3 +212,11 @@ iterator readFastq*[T: NucleicAcid](filename: string): Record[T] =
       description = ""
       sequence = ""
     linesRead += 1
+
+iterator readFastx*[T: NucleicAcid](path: string): Record[T] =
+  # Use the correct parser depending on the file extension
+  var mode = if path.splitFile.ext.toLowerAscii in [".fastq", ".fq"]: "fastq" else: "fasta"
+  if mode == "fasta":
+    for record in readFasta[T](path): yield record
+  elif mode == "fastq":
+    for record in readFastq[T](path): yield record
