@@ -78,6 +78,7 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, cache=true, verb
               inc(overlapCacheMiss)
               lastEndOverlap[sequence] = potentialOverlap
             overlapPresent = true 
+            break
       if not overlapPresent:
         tsrsRemoved += 1
         for kmer in sequence.canonicalKmers(k):
