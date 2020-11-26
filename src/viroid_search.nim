@@ -7,22 +7,26 @@ import strutils
 import terminal
 import strformat
 import os
+import std/enumerate
+import math
 
-template styledWrite(color: ForegroundColor, level: string, message: string) =
-  stderr.styledWriteLine color, "[", level.capitalizeAscii, "] ", fgDefault, message
+template styledWrite(color: ForegroundColor, level: string, message: string, indent=0) =
+  if stderr.isatty:
+    stderr.styledWriteLine color, spaces(indent), "[", level.capitalizeAscii, "] ", fgDefault, message
+  else:
+   stderr.writeLine spaces(indent), "[", level.capitalizeAscii, "] ", message
 template info(message: string) = styledWrite(fgCyan, "info", message)
 template warn(message: string) = styledWrite(fgYellow, "warn", message)
 template error(message: string) = styledWrite(fgRed, "fail", message)
 template success(message: string) = styledWrite(fgGreen, "done", message)
+template prog(message: string) = styledWrite(fgDefault, "prog", message, indent=4)
 
 # Needed overrides to only compare sequences in hashsets
 import hashes
 proc hash(x: Record[Dna]): Hash = hash(x.sequence) 
 proc `==`(x, y: Record): bool = x.sequence == y.sequence
 
-proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, cache=true, verbose=false, showProgress=false) =
-  if not cache and verbose:
-    warn "Cache is disabled!"
+proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, showProgress=false) =
 
   # A mapping of k-mers to the sequences they occur in
   var kmersToSeqs = initTable[Dna, HashSet[Record[Dna]]]()
@@ -33,22 +37,22 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, cache=true, verb
 
   var lastStartOverlap = initTable[Record[Dna], Record[Dna]](internalSmallRnas.card)
   var lastEndOverlap = initTable[Record[Dna], Record[Dna]](internalSmallRnas.card)
+  var lastOverlapDependents = initTable[Record[Dna], HashSet[Record[Dna]]](internalSmallRnas.card)
   var overlapCacheHit = 0
   var overlapCacheMiss = 0
-  var tsrsRemoved = 1 
-  var seqsProcessed = 0
-  var seqsToProcess = 0
   var iteration = 0
   var sequencesToCheck: HashSet[Record[Dna]]
   var overlapPresent: bool
+  var toRemove: seq[Record[Dna]]
+  var toCheck = internalSmallRnas
     
-  while tsrsRemoved != 0:
-    tsrsRemoved = 0
-    seqsProcessed = 0
-    seqsToProcess = internalSmallRnas.card
-    iteration += 1
+  while toCheck.card != 0:
     overlapCacheHit = 0
     overlapCacheMiss = 0
+    toRemove = newSeqOfCap[Record[Dna]](if toRemove.len == 0: internalSmallRnas.card else: toRemove.len)
+
+    if verbose:
+      info (&"Iteration {iteration}").alignLeft(20) & &"Reads to check: {toCheck.len}"
 
     template checkAndRemove(sequence: Record[Dna], start: bool) =
       sequencesToCheck = kmersToSeqs[if start: sequence[0..<k].canonical else: sequence[^k .. ^1].canonical]
@@ -57,52 +61,59 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, cache=true, verb
 
       ## Checks if any element of `sequences` overlap with the start of `sequence`
       for potentialOverlap in sequencesToCheck:
-        if start:
-          if cache and sequence in lastStartOverlap and lastStartOverlap[sequence] in internalSmallRnas:
+        when start:
+          if sequence in lastStartOverlap and lastStartOverlap[sequence] in internalSmallRnas:
             inc(overlapCacheHit)
             overlapPresent = true
             break
           if potentialOverlap.overlapsWithStartOf(sequence, k) or potentialOverlap.reverseComplement.overlapsWithStartOf(sequence, k):
-            if cache:
-              lastStartOverlap[sequence] = potentialOverlap
-              inc(overlapCacheMiss)
+            lastStartOverlap[sequence] = potentialOverlap
+            if lastOverlapDependents.hasKeyOrPut(potentialOverlap, [sequence].toHashSet):
+              lastOverlapDependents[potentialOverlap].incl(sequence)
+            inc(overlapCacheMiss)
             overlapPresent = true
             break
         else:
-          if cache and sequence in lastEndOverlap and lastEndOverlap[sequence] in internalSmallRnas:
+          if sequence in lastEndOverlap and lastEndOverlap[sequence] in internalSmallRnas:
             inc(overlapCacheHit)
             overlapPresent = true
             break
           if sequence.overlapsWithStartOf(potentialOverlap, k) or sequence.overlapsWithStartOf(potentialOverlap.reverseComplement, k):
-            if cache:
-              inc(overlapCacheMiss)
-              lastEndOverlap[sequence] = potentialOverlap
+            inc(overlapCacheMiss)
+            lastEndOverlap[sequence] = potentialOverlap
+            if lastOverlapDependents.hasKeyOrPut(potentialOverlap, [sequence].toHashSet):
+              lastOverlapDependents[potentialOverlap].incl(sequence)
             overlapPresent = true 
             break
       if not overlapPresent:
-        tsrsRemoved += 1
-        for kmer in sequence.canonicalKmers(k):
-          kmersToSeqs[kmer].excl(sequence)
-        internalSmallRnas.excl(sequence)
+        toRemove.add(sequence)
         continue
 
-    for sequence in internalSmallRnas:
-      seqsProcessed += 1
-      if verbose and showProgress and seqsProcessed mod 5000 == 0:
-        stderr.write &"       {seqsProcessed} reads processed ({(seqsProcessed / (seqsToProcess))*100.0:.1f}%)\r"
-        stderr.flushFile
+    for i, sequence in enumerate(toCheck):
+      if verbose and showProgress and toCheck.len > 10 and i mod floor(toCheck.len / 10).toInt == 0 and i > 0:
+        prog &"{i} reads checked ({(i / (toCheck.len))*100.0:.1f}%)"
 
       # check if start kmer overlaps with any sequence
       checkAndRemove(sequence, start=true)
       # check if end k-mer overlaps
       checkAndRemove(sequence, start=false)
 
+    toCheck = initHashSet[Record[Dna]]()
+    for sequence in toRemove:
+      for kmer in sequence.canonicalKmers(k):
+        kmersToSeqs[kmer].excl(sequence)
+      internalSmallRnas.excl(sequence)
+      for x in lastOverlapDependents.getOrDefault(sequence, initHashSet[Record[Dna]]()):
+        if x in internalSmallRnas:
+          toCheck.incl(x)
     if verbose: 
-      info &"Iteration: {iteration}, Terminal Reads Removed: {tsrsRemoved}, Remaining Reads: {internalSmallRnas.card}, Cache hit rate: {(overlapCacheHit / (overlapCacheMiss + overlapCacheHit))*100.0:.1f}%"
+      stderr.write(spaces(4))
+      success &"Terminal Reads Removed: {toRemove.len}, Cache hit rate: {(overlapCacheHit / (overlapCacheMiss + overlapCacheHit))*100.0:.1f}%"
+    inc(iteration)
   if verbose:
     success &"Filtering complete. {internalSmallRnas.card} remaining reads. 🚀"
 
-proc main*(inputPath: string, k: int, outputPath: string, cache=true, verbose=false, showProgress=false, preserveDuplicates=false) =
+proc main*(inputPath: string, k: int, outputPath: string, verbose=false, showProgress=false, preserveDuplicates=false) =
   when not defined(danger):
     warn "Not compiled as dangerous release. This may be slow!"
 
@@ -133,7 +144,7 @@ proc main*(inputPath: string, k: int, outputPath: string, cache=true, verbose=fa
       warn &"{tooShortReads} reads rejected for being less than or equal to {k}nt long."
     info &"Loaded {internalSmallRnas.len} unique reads from {totalReads} total reads. Beginning filtering..."
 
-  pfor(internalSmallRnas, k, cache=cache, verbose=verbose, showProgress=showProgress)
+  pfor(internalSmallRnas, k, verbose=verbose, showProgress=showProgress)
 
   var f: File
   if outputPath == "stdout":
@@ -168,9 +179,8 @@ when isMainModule:
     arg("filepath")
     option("-k", help="The minimum k-mer overlap", default="17")
     option("-o", "--output", help="The output file. Output format (FASTA or FASTQ) will be the same as input.", default="stdout")
-    flag("-c", "--cache", help="If present, turn on caching.")
-    flag("-q", "--quiet")
+    flag("-q", "--quiet", help="If present, don't output anything.")
     flag("-p", "--preserve-duplicates", help="Whether to output multiples reads with identical sequences")
     run:
-      main(opts.filepath, opts.k.parseInt, opts.output, cache=opts.cache, showProgress=true, verbose=not opts.quiet, preserveDuplicates=opts.preserveDuplicates)
+      main(opts.filepath, opts.k.parseInt, opts.output, showProgress=true, verbose=not opts.quiet, preserveDuplicates=opts.preserveDuplicates)
   p.run(if commandLineParams().len == 0: @["--help"] else: commandLineParams())
