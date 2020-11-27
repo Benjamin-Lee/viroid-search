@@ -9,6 +9,7 @@ import strformat
 import os
 import std/enumerate
 import math
+import sequtils
 
 template styledWrite(color: ForegroundColor, level: string, message: string, indent=0) =
   if stderr.isatty:
@@ -37,16 +38,16 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, s
 
   var lastStartOverlap = initTable[Record[Dna], Record[Dna]](internalSmallRnas.card)
   var lastEndOverlap = initTable[Record[Dna], Record[Dna]](internalSmallRnas.card)
-  var lastOverlapDependents = initTable[Record[Dna], HashSet[Record[Dna]]](internalSmallRnas.card)
+  var lastOverlapDependents = initTable[Record[Dna], seq[Record[Dna]]](internalSmallRnas.card)
   var overlapCacheHit = 0
   var overlapCacheMiss = 0
   var iteration = 0
   var sequencesToCheck: HashSet[Record[Dna]]
   var overlapPresent: bool
   var toRemove: seq[Record[Dna]]
-  var toCheck = internalSmallRnas
+  var toCheck = toSeq(internalSmallRnas)
     
-  while toCheck.card != 0:
+  while toCheck.len != 0:
     overlapCacheHit = 0
     overlapCacheMiss = 0
     toRemove = newSeqOfCap[Record[Dna]](if toRemove.len == 0: internalSmallRnas.card else: toRemove.len)
@@ -67,10 +68,9 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, s
             overlapPresent = true
             break
           if potentialOverlap.overlapsWithStartOf(sequence, k) or potentialOverlap.reverseComplement.overlapsWithStartOf(sequence, k):
-            lastStartOverlap[sequence] = potentialOverlap
-            if lastOverlapDependents.hasKeyOrPut(potentialOverlap, [sequence].toHashSet):
-              lastOverlapDependents[potentialOverlap].incl(sequence)
             inc(overlapCacheMiss)
+            lastStartOverlap[sequence] = potentialOverlap
+            lastOverlapDependents.mgetOrPut(potentialOverlap, newSeq[Record[Dna]]()).add(sequence)
             overlapPresent = true
             break
         else:
@@ -81,8 +81,7 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, s
           if sequence.overlapsWithStartOf(potentialOverlap, k) or sequence.overlapsWithStartOf(potentialOverlap.reverseComplement, k):
             inc(overlapCacheMiss)
             lastEndOverlap[sequence] = potentialOverlap
-            if lastOverlapDependents.hasKeyOrPut(potentialOverlap, [sequence].toHashSet):
-              lastOverlapDependents[potentialOverlap].incl(sequence)
+            lastOverlapDependents.mgetOrPut(potentialOverlap, newSeq[Record[Dna]]()).add(sequence)
             overlapPresent = true 
             break
       if not overlapPresent:
@@ -98,14 +97,14 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, s
       # check if end k-mer overlaps
       checkAndRemove(sequence, start=false)
 
-    toCheck = initHashSet[Record[Dna]]()
+    toCheck.setLen(0)
     for sequence in toRemove:
       for kmer in sequence.canonicalKmers(k):
         kmersToSeqs[kmer].excl(sequence)
       internalSmallRnas.excl(sequence)
-      for x in lastOverlapDependents.getOrDefault(sequence, initHashSet[Record[Dna]]()):
+      for x in lastOverlapDependents.getOrDefault(sequence):
         if x in internalSmallRnas:
-          toCheck.incl(x)
+          toCheck.add(x)
     if verbose: 
       stderr.write(spaces(4))
       success &"Terminal Reads Removed: {toRemove.len}, Cache hit rate: {(overlapCacheHit / (overlapCacheMiss + overlapCacheHit))*100.0:.1f}%"
