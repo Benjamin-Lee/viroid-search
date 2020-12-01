@@ -16,7 +16,7 @@ import times
 let startTime = getMonoTime()
 
 template styledWrite(color: ForegroundColor, level: string, message: string, indent=0) =
-  var styledDuration = insertSep($((getMonoTime() - startTime).toParts[Seconds]), ',')
+  var styledDuration = insertSep($((getMonoTime() - startTime).inSeconds), ',')
   if stderr.isatty:
     stderr.styledWriteLine color, spaces(indent), "[", level.capitalizeAscii, "] ", fgDefault, message, styleDim, " [", styledDuration , "s]"
   else:
