@@ -10,17 +10,22 @@ import os
 import std/enumerate
 import math
 import sequtils
+import std/monotimes
+import times
+
+let startTime = getMonoTime()
 
 template styledWrite(color: ForegroundColor, level: string, message: string, indent=0) =
+  var styledDuration = insertSep($((getMonoTime() - startTime).toParts[Seconds]), ',')
   if stderr.isatty:
-    stderr.styledWriteLine color, spaces(indent), "[", level.capitalizeAscii, "] ", fgDefault, message
+    stderr.styledWriteLine color, spaces(indent), "[", level.capitalizeAscii, "] ", fgDefault, message, styleDim, " [", styledDuration , "s]"
   else:
-   stderr.writeLine spaces(indent), "[", level.capitalizeAscii, "] ", message
+   stderr.writeLine spaces(indent), "[", level.capitalizeAscii, "] ", message, " [", styledDuration , "s]"
 template info(message: string) = styledWrite(fgCyan, "info", message)
 template warn(message: string) = styledWrite(fgYellow, "warn", message)
 template error(message: string) = styledWrite(fgRed, "fail", message)
 template success(message: string) = styledWrite(fgGreen, "done", message)
-template prog(message: string) = styledWrite(fgDefault, "prog", message, indent=4)
+template prog(message: string) = styledWrite(fgDefault, "prog", message, indent=7)
 
 # Needed overrides to only compare sequences in hashsets
 import hashes
@@ -68,7 +73,7 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, s
     toRemove = newSeqOfCap[Record[Dna]](if toRemove.len == 0: internalSmallRnas.card else: toRemove.len)
 
     if verbose:
-      info (&"Iteration {iteration}").alignLeft(20) & &"Reads to check: {toCheck.len}"
+      info &"Iteration {iteration} (reads to check: {insertSep($(toCheck.len), ',')})"
 
     template checkAndRemove(sequence: Record[Dna], start: bool) =
       overlapPresent = false
@@ -109,7 +114,7 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, s
 
     for i, sequence in enumerate(toCheck):
       if verbose and showProgress and toCheck.len > 10 and i mod floor(toCheck.len / 10).toInt == 0 and i > 0:
-        prog &"{i} reads checked ({(i / (toCheck.len))*100.0:.1f}%)"
+        prog &"{($i).insertSep(',')} reads checked ({(i / (toCheck.len))*100.0:.1f}%)"
 
       # check if start kmer overlaps with any sequence
       checkAndRemove(sequence, start=true)
@@ -125,11 +130,11 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, s
         if x in internalSmallRnas:
           toCheck.add(x)
     if verbose: 
-      stderr.write(spaces(4))
-      success &"Terminal Reads Removed: {toRemove.len}, Cache hit rate: {(overlapCacheHit / (overlapCacheMiss + overlapCacheHit))*100.0:.1f}%"
+      stderr.write(spaces(7))
+      success &"Terminal Reads Removed: {insertSep($(toRemove.len), ',')} (cache hit rate: {(overlapCacheHit / (overlapCacheMiss + overlapCacheHit))*100.0:.1f})%"
     inc(iteration)
   if verbose:
-    success &"Filtering complete. {internalSmallRnas.card} remaining reads. 🚀"
+    success &"Filtering complete. {insertSep($(internalSmallRnas.len), ',')} remaining reads. 🚀"
 
 proc main*(inputPath: string, k: int, outputPath: string, verbose=false, showProgress=false, preserveDuplicates=false) =
   when not defined(danger):
@@ -155,6 +160,9 @@ proc main*(inputPath: string, k: int, outputPath: string, verbose=false, showPro
       continue
     internalSmallRnas.incl(record)
     totalReads += 1
+    if verbose and showProgress and totalReads mod 5_000 == 0:
+      # stderr.write(spaces(4))
+      prog &"Reads loaded: {($totalReads).insertSep(',')}"
 
   # report the results of reading
   if verbose: 
