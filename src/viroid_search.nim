@@ -28,13 +28,28 @@ proc hash(x: Record[Dna]): Hash = hash(x.sequence)
 proc `==`(x, y: Record): bool = x.sequence == y.sequence
 
 proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, showProgress=false) =
-
-  # A mapping of k-mers to the sequences they occur in
-  var kmersToSeqs = initTable[Dna, HashSet[Record[Dna]]]()
+  ## Progressively filter overlapping reads such that all remaining reads overlap on both ends with another remaiing read.
+  if verbose:
+    info "Building k-mer to read lookup table..."
+  # a mapping of start/end k-mers to the sequences they occur in
+  var kmersToSeqs = initTable[Dna, HashSet[Record[Dna]]](internalSmallRnas.len * 2)
+  # hold the k-mers on either end of each read, of which there can be at most 2n
+  var terminalKmers = initHashSet[Dna](internalSmallRnas.len * 2)
+  # build the terminal k-mer HashSet (TODO: Bloom filter?)
+  for i, sequence in enumerate(internalSmallRnas):
+    if verbose and showProgress and i mod floor(internalSmallRnas.len / 10).toInt == 0 and i > 0:
+      prog &"{i} reads mapped ({(i / (internalSmallRnas.len))*100.0:.1f}%)"
+    terminalKmers.incl(sequence[0..<k].canonical)
+    terminalKmers.incl(sequence[^k..^1].canonical)
+  # build the mapping
   for sequence in internalSmallRnas:
     for kmer in sequence.canonicalKmers(k):
+      if kmer notin terminalKmers:
+        continue
       if kmersToSeqs.hasKeyOrPut(kmer, toHashSet([sequence])):
         kmersToSeqs[kmer].incl(sequence)
+  # clear the memory of the terminal k-mer HashSet (?)
+  init(terminalKmers) 
 
   var lastStartOverlap = initTable[Record[Dna], Record[Dna]](internalSmallRnas.card)
   var lastEndOverlap = initTable[Record[Dna], Record[Dna]](internalSmallRnas.card)
@@ -42,10 +57,10 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, s
   var overlapCacheHit = 0
   var overlapCacheMiss = 0
   var iteration = 0
-  var sequencesToCheck: HashSet[Record[Dna]]
   var overlapPresent: bool
   var toRemove: seq[Record[Dna]]
   var toCheck = toSeq(internalSmallRnas)
+  let invalidDefaultRecord = toRecord(Dna"*INVALID SEQUENCE*", "An invalid record that will never be in the main set")
     
   while toCheck.len != 0:
     overlapCacheHit = 0
@@ -56,34 +71,38 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, s
       info (&"Iteration {iteration}").alignLeft(20) & &"Reads to check: {toCheck.len}"
 
     template checkAndRemove(sequence: Record[Dna], start: bool) =
-      sequencesToCheck = kmersToSeqs[if start: sequence[0..<k].canonical else: sequence[^k .. ^1].canonical]
-      sequencesToCheck.excl(sequence)
       overlapPresent = false
+      # first, check the cache
+      when start:
+        if lastStartOverlap.getOrDefault(sequence, invalidDefaultRecord) in internalSmallRnas:
+          inc(overlapCacheHit)
+          overlapPresent = true
+      else:
+        if lastEndOverlap.getOrDefault(sequence, invalidDefaultRecord) in internalSmallRnas:
+          inc(overlapCacheHit)
+          overlapPresent = true
 
-      ## Checks if any element of `sequences` overlap with the start of `sequence`
-      for potentialOverlap in sequencesToCheck:
-        when start:
-          if sequence in lastStartOverlap and lastStartOverlap[sequence] in internalSmallRnas:
-            inc(overlapCacheHit)
-            overlapPresent = true
-            break
-          if potentialOverlap.overlapsWithStartOf(sequence, k) or potentialOverlap.reverseComplement.overlapsWithStartOf(sequence, k):
-            inc(overlapCacheMiss)
-            lastStartOverlap[sequence] = potentialOverlap
-            lastOverlapDependents.mgetOrPut(potentialOverlap, newSeq[Record[Dna]]()).add(sequence)
-            overlapPresent = true
-            break
-        else:
-          if sequence in lastEndOverlap and lastEndOverlap[sequence] in internalSmallRnas:
-            inc(overlapCacheHit)
-            overlapPresent = true
-            break
-          if sequence.overlapsWithStartOf(potentialOverlap, k) or sequence.overlapsWithStartOf(potentialOverlap.reverseComplement, k):
-            inc(overlapCacheMiss)
-            lastEndOverlap[sequence] = potentialOverlap
-            lastOverlapDependents.mgetOrPut(potentialOverlap, newSeq[Record[Dna]]()).add(sequence)
-            overlapPresent = true 
-            break
+      # we can't "return" since this is a template, so we'll use a conditional
+      if not overlapPresent:
+        for potentialOverlap in kmersToSeqs[if start: sequence[0..<k].canonical else: sequence[^k .. ^1].canonical]:
+          if potentialOverlap notin internalSmallRnas or potentialOverlap == sequence:
+            continue
+          # check if read containing the start k-mer of `sequence` overlaps at the start of `sequence`
+          when start:
+            if potentialOverlap.overlapsWithStartOf(sequence, k) or potentialOverlap.reverseComplement.overlapsWithStartOf(sequence, k):
+              inc(overlapCacheMiss)
+              lastStartOverlap[sequence] = potentialOverlap
+              lastOverlapDependents.mgetOrPut(potentialOverlap, newSeq[Record[Dna]]()).add(sequence)
+              overlapPresent = true
+              break
+          # ibid, but for the end.
+          else:
+            if sequence.overlapsWithStartOf(potentialOverlap, k) or sequence.overlapsWithStartOf(potentialOverlap.reverseComplement, k):
+              inc(overlapCacheMiss)
+              lastEndOverlap[sequence] = potentialOverlap
+              lastOverlapDependents.mgetOrPut(potentialOverlap, newSeq[Record[Dna]]()).add(sequence)
+              overlapPresent = true 
+              break
       if not overlapPresent:
         toRemove.add(sequence)
         continue
@@ -99,8 +118,8 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, s
 
     toCheck.setLen(0)
     for sequence in toRemove:
-      for kmer in sequence.canonicalKmers(k):
-        kmersToSeqs[kmer].excl(sequence)
+      kmersToSeqs[sequence[0..<k].canonical].excl(sequence)
+      kmersToSeqs[sequence[^k .. ^1].canonical].excl(sequence)
       internalSmallRnas.excl(sequence)
       for x in lastOverlapDependents.getOrDefault(sequence):
         if x in internalSmallRnas:
