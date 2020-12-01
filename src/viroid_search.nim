@@ -32,30 +32,41 @@ import hashes
 proc hash(x: Record[Dna]): Hash = hash(x.sequence) 
 proc `==`(x, y: Record): bool = x.sequence == y.sequence
 
-proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, showProgress=false) =
+proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, showProgress=false, logInterval=10) =
   ## Progressively filter overlapping reads such that all remaining reads overlap on both ends with another remaiing read.
   if verbose:
-    info "Building k-mer to read lookup table..."
-  # a mapping of start/end k-mers to the sequences they occur in
-  var kmersToSeqs = initTable[Dna, HashSet[Record[Dna]]](internalSmallRnas.len * 2)
+    info "Building terminal k-mer to read lookup table"
+    info "Step 1: Create hash set of terminal k-mers"
   # hold the k-mers on either end of each read, of which there can be at most 2n
   var terminalKmers = initHashSet[Dna](internalSmallRnas.len * 2)
   # build the terminal k-mer HashSet (TODO: Bloom filter?)
   for i, sequence in enumerate(internalSmallRnas):
-    if verbose and showProgress and i mod floor(internalSmallRnas.len / 10).toInt == 0 and i > 0:
-      prog &"{i} reads mapped ({(i / (internalSmallRnas.len))*100.0:.1f}%)"
+    if verbose and showProgress and i mod floor(internalSmallRnas.len / logInterval).toInt == 0 and i > 0:
+      prog &"{insertSep($i, ',')} reads processed ({(i / (internalSmallRnas.len))*100.0:.1f}%)"
     terminalKmers.incl(sequence[0..<k].canonical)
     terminalKmers.incl(sequence[^k..^1].canonical)
+
+  if verbose:
+    info "Step 2: Map terminal k-mers to their sequences"
+  # a mapping of start/end k-mers to the sequences they occur in
+  var kmersToSeqs = initTable[Dna, HashSet[Record[Dna]]](terminalKmers.len)
   # build the mapping
-  for sequence in internalSmallRnas:
+  for i, sequence in enumerate(internalSmallRnas):
+    if verbose and showProgress and i mod floor(internalSmallRnas.len / logInterval).toInt == 0 and i > 0:
+      prog &"{i} reads with terminal k-mers mapped  ({(i / (internalSmallRnas.len))*100.0:.1f}%)"
     for kmer in sequence.canonicalKmers(k):
+      # we only care about k-mers that appear at the start or end of other reads
       if kmer notin terminalKmers:
         continue
       if kmersToSeqs.hasKeyOrPut(kmer, toHashSet([sequence])):
         kmersToSeqs[kmer].incl(sequence)
+  if verbose:
+    info "Done mapping"
   # clear the memory of the terminal k-mer HashSet (?)
   init(terminalKmers) 
 
+  if verbose:
+    info "Allocating cache"
   var lastStartOverlap = initTable[Record[Dna], Record[Dna]](internalSmallRnas.card)
   var lastEndOverlap = initTable[Record[Dna], Record[Dna]](internalSmallRnas.card)
   var lastOverlapDependents = initTable[Record[Dna], seq[Record[Dna]]](internalSmallRnas.card)
@@ -64,9 +75,11 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, s
   var iteration = 0
   var overlapPresent: bool
   var toRemove: seq[Record[Dna]]
-  var toCheck = toSeq(internalSmallRnas)
+  var toCheck = toSeq(internalSmallRnas) # expensive!?
   let invalidDefaultRecord = toRecord(Dna"*INVALID SEQUENCE*", "An invalid record that will never be in the main set")
-    
+  if verbose:
+    info "Cache allocated"
+    info "Beginning first round of filtering. This may take a while!"
   while toCheck.len != 0:
     overlapCacheHit = 0
     overlapCacheMiss = 0
@@ -113,7 +126,7 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, s
         continue
 
     for i, sequence in enumerate(toCheck):
-      if verbose and showProgress and toCheck.len > 10 and i mod floor(toCheck.len / 10).toInt == 0 and i > 0:
+      if verbose and showProgress and toCheck.len > 10 and i mod floor(toCheck.len / logInterval).toInt == 0 and i > 0:
         prog &"{($i).insertSep(',')} reads checked ({(i / (toCheck.len))*100.0:.1f}%)"
 
       # check if start kmer overlaps with any sequence
@@ -136,7 +149,7 @@ proc pfor*(internalSmallRnas: var HashSet[Record[Dna]], k: int, verbose=false, s
   if verbose:
     success &"Filtering complete. {insertSep($(internalSmallRnas.len), ',')} remaining reads. 🚀"
 
-proc main*(inputPath: string, k: int, outputPath: string, verbose=false, showProgress=false, preserveDuplicates=false) =
+proc main*(inputPath: string, k: int, outputPath: string, verbose=false, showProgress=false, preserveDuplicates=false, logInterval=10) =
   when not defined(danger):
     warn "Not compiled as dangerous release. This may be slow!"
 
@@ -153,14 +166,14 @@ proc main*(inputPath: string, k: int, outputPath: string, verbose=false, showPro
   var totalReads = 0
   var internalSmallRnas = HashSet[Record[Dna]]()
   if verbose: 
-    info &"Loading reads from {inputPath}..."
+    info &"Loading reads from {inputPath}"
   for record in readFastx[Dna](inputPath):
     if record.len <= k:
       tooShortReads += 1
       continue
     internalSmallRnas.incl(record)
     totalReads += 1
-    if verbose and showProgress and totalReads mod 5_000 == 0:
+    if verbose and showProgress and totalReads mod 25_000 == 0:
       # stderr.write(spaces(4))
       prog &"Reads loaded: {($totalReads).insertSep(',')}"
 
@@ -170,7 +183,7 @@ proc main*(inputPath: string, k: int, outputPath: string, verbose=false, showPro
       warn &"{tooShortReads} reads rejected for being less than or equal to {k}nt long."
     info &"Loaded {internalSmallRnas.len} unique reads from {totalReads} total reads. Beginning filtering..."
 
-  pfor(internalSmallRnas, k, verbose=verbose, showProgress=showProgress)
+  pfor(internalSmallRnas, k, verbose=verbose, showProgress=showProgress, logInterval=logInterval)
 
   var f: File
   if outputPath == "stdout":
@@ -205,8 +218,9 @@ when isMainModule:
     arg("filepath")
     option("-k", help="The minimum k-mer overlap", default="17")
     option("-o", "--output", help="The output file. Output format (FASTA or FASTQ) will be the same as input.", default="stdout")
+    option("-l", "--log-interval", help="If showing progress, how many intervals to break tasks into. For larger runs, finer granularity may be desired.", default="10")
     flag("-q", "--quiet", help="If present, don't output anything.")
     flag("-p", "--preserve-duplicates", help="Whether to output multiples reads with identical sequences")
     run:
-      main(opts.filepath, opts.k.parseInt, opts.output, showProgress=true, verbose=not opts.quiet, preserveDuplicates=opts.preserveDuplicates)
+      main(opts.filepath, opts.k.parseInt, opts.output, showProgress=true, verbose=not opts.quiet, preserveDuplicates=opts.preserveDuplicates, logInterval=opts.logInterval.parseInt)
   p.run(if commandLineParams().len == 0: @["--help"] else: commandLineParams())
