@@ -171,7 +171,7 @@ proc main*(inputPath: string, k: int, outputPath: string, verbose=false, showPro
     f = open(outputPath, fmWrite)
 
   try: 
-    let outputFastq = outputPath.splitFile.ext.toLowerAscii in [".fq", ".fastq"]
+    let outputFastq = inputPath.splitFile.ext.toLowerAscii in [".fq", ".fastq"]
     for record in internalSmallRnas:
       if outputFastq:
         f.writeLine record.asFastq
