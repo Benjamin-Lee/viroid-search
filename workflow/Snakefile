@@ -4,8 +4,8 @@ rule all:
 
 rule download_sra:
     output: 
-        "data/{accession}/{accession}_1.fastq",
-        "data/{accession}/{accession}_2.fastq"
+        temp("data/{accession}/{accession}_1.fastq"),
+        temp("data/{accession}/{accession}_2.fastq")
     resources: 
         cpus=6
     envmodules:
@@ -15,8 +15,8 @@ rule download_sra:
 
 rule fastp:
     input: 
-        r1 = temp("data/{accession}/{accession}_1.fastq"),
-        r2 = temp("data/{accession}/{accession}_2.fastq")
+        r1 = "data/{accession}/{accession}_1.fastq",
+        r2 = "data/{accession}/{accession}_2.fastq"
     output: 
         r1 = "data/{accession}/{accession}_1.fastp.fastq.gz",
         r2 = "data/{accession}/{accession}_2.fastp.fastq.gz"
