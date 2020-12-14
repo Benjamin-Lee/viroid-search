@@ -1,6 +1,6 @@
 rule all:
     output: touch("{accession}.all")
-    input: "data/{accession}/rnaspades/transcripts.fasta"
+    input: "data/{accession}/cirit.fasta"
 
 rule download_sra:
     output: 
@@ -33,7 +33,17 @@ rule rnaspades:
     output: "data/{accession}/rnaspades/transcripts.fasta"
     resources:
         cpus = 32,
-        mem_mb = 100000
+        mem_mb = 100000,
+        time_min = 240
     envmodules:
         "spades/3.14.1"
     shell: "export OMP_NUM_THREADS={resources.cpus} && rnaspades.py -1 {input.r1} -2 {input.r2} -o data/{wildcards.accession}/rnaspades --threads {resources.cpus} --memory 100"
+
+rule cirit:
+    input: "data/{accession}/rnaspades/transcripts.fasta"
+    output: "data/{accession}/cirit.fasta"
+    resources:
+        time_min = 5
+    envmodules:
+        "java/12.0.1"
+    shell: "java -jar ~/Cirit-1.0.jar -i {input} -o {output}"
