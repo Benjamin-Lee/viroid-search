@@ -10,7 +10,6 @@ rule download_sra:
         cpus=6
     envmodules:
         "sratoolkit/2.9.6",
-        "pigz/2.4"
     shell: 
         "fasterq-dump {wildcards.accession} -O data/{wildcards.accession} -e {resources.cpus}"
 
@@ -26,9 +25,7 @@ rule compress_sra:
     envmodules:
         "pigz/2.4"    
     shell:
-        "pigz -p {resources.cpus} {output[0]} && "
-        "pigz -p {resources.cpus} {output[1]}"
-
+        "pigz -p {resources.cpus} {input}"
 rule fastp:
     input: 
         r1 = "data/{accession}/{accession}_1.fastq.gz",
