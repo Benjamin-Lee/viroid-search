@@ -1,4 +1,4 @@
-cluster: "sbatch -p norm -t {resources.time_min} --mem={resources.mem_mb} -c {resources.cpus}"
+cluster: "sbatch -p norm,quick -t {resources.time_min} --mem={resources.mem_mb} -c {resources.cpus}"
 jobs: 10
 default-resources: [cpus=2, mem_mb=4000, time_min=60]
 resources: [cpus=30, mem_mb=500000]
