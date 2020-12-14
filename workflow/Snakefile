@@ -4,26 +4,27 @@
 
 rule download_sra:
     output: 
-        "data/{accession}/{accession}_1.fastq",
-        "data/{accession}/{accession}_2.fastq"
+        "data/{accession}/{accession}_1.fastq.gz",
+        "data/{accession}/{accession}_2.fastq.gz"
     resources: 
-        time_min=60, 
-        mem_mb=8000, 
         cpus=6
     envmodules:
-        "sratoolkit/2.9.6"
-    shell: "fasterq-dump {wildcards.accession} -O data/{wildcards.accession} -e {resources.cpus}"
+        "sratoolkit/2.9.6",
+        "pigz/2.4"
+    shell: 
+        "fasterq-dump {wildcards.accession} -O data/{wildcards.accession} -e {resources.cpus} &&"
+        "pigz -p {resources.cpus} {output[0]} &&"
+        "pigz -p {resources.cpus} {output[1]}"
 
 rule fastp:
     input: 
-        r1 = "data/{accession}/{accession}_1.fastq",
-        r2 = "data/{accession}/{accession}_2.fastq"
+        r1 = "data/{accession}/{accession}_1.fastq.gz",
+        r2 = "data/{accession}/{accession}_2.fastq.gz"
     output: 
-        r1 = "data/{accession}/{accession}_1.fastp.fastq",
-        r2 = "data/{accession}/{accession}_2.fastp.fastq"
+        r1 = "data/{accession}/{accession}_1.fastp.fastq.gz",
+        r2 = "data/{accession}/{accession}_2.fastp.fastq.gz"
     resources:
-        cpus = 6,
-        mem_mb = 24000
+        cpus = 7,
     envmodules:
         "fastp/0.20.1"
-    shell: "fastp -i {input.r1} -I {input.r2} -o {output.r1} -O {output.r2} --thread {resources.cpus}"
+    shell: "fastp -i {input.r1} -I {input.r2} -o {output.r1} -O {output.r2} --thread {resources.cpus - 1}"
