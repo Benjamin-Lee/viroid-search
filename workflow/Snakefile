@@ -36,4 +36,4 @@ rule rnaspades:
         mem_mb = 100000
     envmodules:
         "spades/3.14.1"
-    shell: "rnaspades.py -1 {input.r1} -2 {input.r2} -o data/{wildcards.accession}/rnaspades --threads {resources.cpus} --memory 100"
+    shell: "export OMP_NUM_THREADS={resources.cpus} && rnaspades.py -1 {input.r1} -2 {input.r2} -o data/{wildcards.accession}/rnaspades --threads {resources.cpus} --memory 100"
