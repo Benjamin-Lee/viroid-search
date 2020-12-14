@@ -10,6 +10,8 @@ rule download_sra:
         time_min=60, 
         mem_mb=8000, 
         cpus=6
+    envmodules:
+        "sratoolkit/2.9.6"
     shell: "fasterq-dump {wildcards.accession} -O data/{wildcards.accession} -e {resources.cpus}"
 
 rule fastp:
@@ -22,4 +24,6 @@ rule fastp:
     resources:
         cpus = 6,
         mem_mb = 24000
+    envmodules:
+        "fastp/0.20.1"
     shell: "fastp -i {input.r1} -I {input.r2} -o {output.r1} -O {output.r2} --thread {resources.cpus}"
