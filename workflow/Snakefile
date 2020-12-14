@@ -4,16 +4,29 @@
 
 rule download_sra:
     output: 
-        "data/{accession}/{accession}_1.fastq.gz",
-        "data/{accession}/{accession}_2.fastq.gz"
+        "data/{accession}/{accession}_1.fastq",
+        "data/{accession}/{accession}_2.fastq"
     resources: 
         cpus=6
     envmodules:
         "sratoolkit/2.9.6",
         "pigz/2.4"
     shell: 
-        "fasterq-dump {wildcards.accession} -O data/{wildcards.accession} -e {resources.cpus} &&"
-        "pigz -p {resources.cpus} {output[0]} &&"
+        "fasterq-dump {wildcards.accession} -O data/{wildcards.accession} -e {resources.cpus}"
+
+rule compress_sra:
+    output: 
+        "data/{accession}/{accession}_1.fastq.gz",
+        "data/{accession}/{accession}_2.fastq.gz"
+    input:
+        "data/{accession}/{accession}_1.fastq",
+        "data/{accession}/{accession}_2.fastq"
+    resources: 
+        cpus=16
+    envmodules:
+        "pigz/2.4"    
+    shell:
+        "pigz -p {resources.cpus} {output[0]} && "
         "pigz -p {resources.cpus} {output[1]}"
 
 rule fastp:
