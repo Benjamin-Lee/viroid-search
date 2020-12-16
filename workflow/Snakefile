@@ -26,7 +26,10 @@ rule fastp:
         cpus = 17,
     envmodules:
         "fastp/0.20.1"
-    shell: "fastp -i {input.r1} -I {input.r2} -o {output.r1} -O {output.r2} --detect_adapter_for_pe --thread 16 -h {accession}/{accession}.fastp.html -j {accession}/{accession}.fastp.json -z 9"
+    shell: 
+        "fastp -i {input.r1} -I {input.r2} -o {output.r1} -O {output.r2} "
+        "--detect_adapter_for_pe --thread 16 "
+        "-h {wildcards.accession}/{wildcards.accession}.fastp.html -j {wildcards.accession}/{wildcards.accession}.fastp.json -z 9"
 
 rule rnaspades:
     input: 
