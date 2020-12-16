@@ -21,10 +21,12 @@ rule fastp:
         r1 = "{accession}/{accession}_1.fastp.fastq.gz",
         r2 = "{accession}/{accession}_2.fastp.fastq.gz"
     resources:
-        cpus = 7,
+         # If you want to change the numer of CPUs, make sure pass one fewer thread to fastp
+         # It uses the worker thread count in addition to one extra as the "main" thread
+        cpus = 17,
     envmodules:
         "fastp/0.20.1"
-    shell: "fastp -i {input.r1} -I {input.r2} -o {output.r1} -O {output.r2} --thread {resources.cpus}"
+    shell: "fastp -i {input.r1} -I {input.r2} -o {output.r1} -O {output.r2} --detect_adapter_for_pe --thread 16 -h {accession}/{accession}.fastp.html -j {accession}/{accession}.fastp.json -z 9"
 
 rule rnaspades:
     input: 
@@ -33,11 +35,11 @@ rule rnaspades:
     output: "{accession}/rnaspades/transcripts.fasta"
     resources:
         cpus = 32,
-        mem_mb = 100000,
+        mem_mb = 50000, # the max memory for SPAdes defaults to 250 G but we never even get close
         time_min = 240
     envmodules:
         "spades/3.14.1"
-    shell: "export OMP_NUM_THREADS={resources.cpus} && rnaspades.py -1 {input.r1} -2 {input.r2} -o {wildcards.accession}/rnaspades --threads {resources.cpus} --memory 100"
+    shell: "export OMP_NUM_THREADS={resources.cpus} && rnaspades.py -1 {input.r1} -2 {input.r2} -o {wildcards.accession}/rnaspades --threads {resources.cpus}"
 
 rule cirit:
     input: "{accession}/rnaspades/transcripts.fasta"
