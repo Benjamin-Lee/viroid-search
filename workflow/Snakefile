@@ -6,7 +6,6 @@ rule download_sra:
         temp("{accession}/{accession}_1.fastq"),
         temp("{accession}/{accession}_2.fastq"),
         temp("{accession}/{accession}.sratools.done"),
-        temp("{accession}/{accession}.sra"),
         log = temp("{accession}/{accession}.sratools.log")
     resources: 
         cpus=6
