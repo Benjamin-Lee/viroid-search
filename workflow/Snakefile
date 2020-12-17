@@ -4,13 +4,38 @@ rule all:
 rule download_sra:
     output: 
         temp("{accession}/{accession}_1.fastq"),
-        temp("{accession}/{accession}_2.fastq")
+        temp("{accession}/{accession}_2.fastq"),
+        temp("{accession}/{accession}.sratools.done"),
+        temp("{accession}/{accession}.sra"),
+        log = temp("{accession}/{accession}.sratools.log")
     resources: 
         cpus=6
     envmodules:
         "sratoolkit/2.9.6",
     shell: 
-        "fasterq-dump {wildcards.accession} -O {wildcards.accession} -e {resources.cpus}"
+        """
+        prefetch {wildcards.accession} -f yes
+        fasterq-dump {wildcards.accession} -O {wildcards.accession} --threads {resources.cpus} > {output.log} 2>&1
+
+        # ensure we have a valid output by checking the logfile
+        if $(grep -q "reads written" {output.log}); then 
+            touch "{wildcards.accession}/{wildcards.accession}.sratools.done"
+        else
+            echo "Error in fasterq-dump, trying again......"
+            exit 1
+        fi
+        """
+# # A method using wget
+# rule download_sra:
+#     output: 
+#         temp("{accession}/{accession}_{r}.fastq"),
+#     resources: 
+#         cpus=2
+#     params:
+#         dir1=lambda wildcards: wildcards.accession[:6],
+#         dir2=lambda wildcards: "" if len(wildcards.accession) == 9 else "/" + wildcards.accession[9:].zfill(3)
+#     shell: 
+#         "wget -P {wildcards.accession} ftp://ftp.sra.ebi.ac.uk/vol1/fastq/{params.dir1}{params.dir2}/{wildcards.accession}/{wildcards.accession}_{wildcards.r}.fastq.gz"
 
 rule fastp:
     input: 
