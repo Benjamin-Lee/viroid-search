@@ -7,6 +7,7 @@ rule download_sra:
         temp("{accession}/{accession}_2.fastq"),
         temp("{accession}/{accession}.sratools.done")
     log: "{accession}/{accession}.sratools.log"
+    group: "preprocessing"
     resources: 
         cpus=6
     envmodules:
@@ -23,6 +24,13 @@ rule download_sra:
             echo "Error in fasterq-dump, trying again......"
             exit 1
         fi
+        
+        # # if we still have the SRA file, delete it
+        # [ -f {wildcards.accession}/{wildcards.accession}.sra ] && rm {wildcards.accession}/{wildcards.accession}.sra
+
+        # # compress the intermediate FASTQ files
+        # pigz -p{resources.cpus} {accession}/{accession}_1.fastq.gz
+        # pigz -p{resources.cpus} {accession}/{accession}_2.fastq.gz
         """
 # # A method using wget
 # rule download_sra:
@@ -43,6 +51,7 @@ rule fastp:
     output: 
         r1 = "{accession}/{accession}_1.fastp.fastq.gz",
         r2 = "{accession}/{accession}_2.fastp.fastq.gz"
+    group: "preprocessing"
     resources:
          # If you want to change the numer of CPUs, make sure pass one fewer thread to fastp
          # It uses the worker thread count in addition to one extra as the "main" thread
