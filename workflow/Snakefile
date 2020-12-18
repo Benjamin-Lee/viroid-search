@@ -11,7 +11,7 @@ rule download_sra:
     resources: 
         cpus=6
     envmodules:
-        "sratoolkit/2.9.6",
+        "sratoolkit/2.10.9",
     shell: 
         """
         prefetch {wildcards.accession} -f yes > {log} 2>&1
