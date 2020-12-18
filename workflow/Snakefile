@@ -29,8 +29,8 @@ rule download_sra:
         # [ -f {wildcards.accession}/{wildcards.accession}.sra ] && rm {wildcards.accession}/{wildcards.accession}.sra
 
         # # compress the intermediate FASTQ files
-        # pigz -p{resources.cpus} {accession}/{accession}_1.fastq.gz
-        # pigz -p{resources.cpus} {accession}/{accession}_2.fastq.gz
+        # pigz -p{resources.cpus} {wildcards.accession}/{wildcards.accession}_1.fastq.gz
+        # pigz -p{resources.cpus} {wildcards.accession}/{wildcards.accession}_2.fastq.gz
         """
 # # A method using wget
 # rule download_sra:
