@@ -51,6 +51,9 @@ rule fastp:
     output: 
         r1 = "{accession}/{accession}_1.fastp.fastq.gz",
         r2 = "{accession}/{accession}_2.fastp.fastq.gz"
+    log:
+        json = "{accession}/{accession}.fastp.json",
+        html = "{accession}/{accession}.fastp.html"
     group: "preprocessing"
     resources:
          # If you want to change the numer of CPUs, make sure pass one fewer thread to fastp
@@ -61,7 +64,7 @@ rule fastp:
     shell: 
         "fastp -i {input.r1} -I {input.r2} -o {output.r1} -O {output.r2} "
         "--thread 16 -z 9 "
-        "-h {wildcards.accession}/{wildcards.accession}.fastp.html -j {wildcards.accession}/{wildcards.accession}.fastp.json"
+        "-h {log.html} -j {log.json}"
 
 rule rnaspades:
     input: 
