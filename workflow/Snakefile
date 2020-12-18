@@ -5,19 +5,19 @@ rule download_sra:
     output: 
         temp("{accession}/{accession}_1.fastq"),
         temp("{accession}/{accession}_2.fastq"),
-        temp("{accession}/{accession}.sratools.done"),
-        log = temp("{accession}/{accession}.sratools.log")
+        temp("{accession}/{accession}.sratools.done")
+    log: "{accession}/{accession}.sratools.log"
     resources: 
         cpus=6
     envmodules:
         "sratoolkit/2.9.6",
     shell: 
         """
-        prefetch {wildcards.accession} -f yes
-        fasterq-dump {wildcards.accession} -O {wildcards.accession} --threads {resources.cpus} > {output.log} 2>&1
+        prefetch {wildcards.accession} -f yes > {log} 2>&1
+        fasterq-dump {wildcards.accession} -O {wildcards.accession} --threads {resources.cpus} > {log} 2>&1
 
         # ensure we have a valid output by checking the logfile
-        if $(grep -q "reads written" {output.log}); then 
+        if $(grep -q "reads written" {log}); then 
             touch "{wildcards.accession}/{wildcards.accession}.sratools.done"
         else
             echo "Error in fasterq-dump, trying again......"
