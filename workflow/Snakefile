@@ -87,3 +87,21 @@ rule cirit:
     envmodules:
         "java/12.0.1"
     shell: "java -jar ~/Cirit-1.0.jar -i {input} -o {output}"
+
+rule rnafold:
+    input: "{accession}/cirit.fasta"
+    output: 
+        "{accession}/cirit.dbn",
+        directory("{accession}/ps")
+    resources:
+        time_min = 10,
+        cpus = 32
+    envmodules:
+        "viennarna/2.4.17"
+    shell: 
+        """
+        cd {wildcards.accession}"
+        RNAfold cirit.fasta -j{resources.cpus} > cirit.dbn
+        mkdir ps
+        mv *.ps ps
+        """"
