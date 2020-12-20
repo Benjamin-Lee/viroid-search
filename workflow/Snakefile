@@ -91,7 +91,7 @@ rule cirit:
 
 rule length_filter:
     input: "{accession}/cirit.fasta"
-    output: "{accession}/cirit_gt{min_length}_lt{max_length}.fasta"
+    output: "{accession}/cirit_gt{min_len}_lt{max_len}.fasta"
     resources: time_min = 10
     group: "postprocessing"
     envmodules: "seqkit/0.14.0"
