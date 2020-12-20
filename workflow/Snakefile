@@ -84,6 +84,7 @@ rule cirit:
     output: "{accession}/cirit.fasta"
     resources:
         time_min = 5
+    group: "postprocessing"
     envmodules:
         "java/12.0.1"
     shell: "java -jar ~/Cirit-1.0.jar -i {input} -o {output}"
@@ -92,23 +93,25 @@ rule length_filter:
     input: "{accession}/cirit.fasta"
     output: "{accession}/cirit_gt{min_length}_lt{max_length}.fasta"
     resources: time_min = 10
+    group: "postprocessing"
     envmodules: "seqkit/0.14.0"
     shell: "seqkit seq -m {min_length} -M {max_length} -o {output}"
 
 rule rnafold:
-    input: "{accession}/cirit_gt200_lt2000.fasta"
+    input: "{accession}/cirit_gt200=_lt2000.fasta"
     output: 
-        "{accession}/cirit.dbn",
+        "{accession}/cirit_gt200_lt2000.dbn",
         directory("{accession}/ps")
     resources:
         time_min = 10,
         cpus = 32
+    group: "postprocessing"
     envmodules:
         "viennarna/2.4.17"
     shell: 
         """
         cd {wildcards.accession}
-        RNAfold cirit_gt200_lt2000.fasta -j{resources.cpus} > cirit.dbn
+        RNAfold cirit_gt200_lt2000.fasta -j{resources.cpus} > cirit_gt200_lt2000.dbn
         mkdir ps
         mv *.ps ps
         """
