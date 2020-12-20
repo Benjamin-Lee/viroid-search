@@ -95,10 +95,10 @@ rule length_filter:
     resources: time_min = 10
     group: "postprocessing"
     envmodules: "seqkit/0.14.0"
-    shell: "seqkit seq -m {min_length} -M {max_length} -o {output}"
+    shell: "seqkit seq -m {wildcards.min_len} -M {wildcards.max_len} -o {output}"
 
 rule rnafold:
-    input: "{accession}/cirit_gt200=_lt2000.fasta"
+    input: "{accession}/cirit_gt200_lt2000.fasta"
     output: 
         "{accession}/cirit_gt200_lt2000.dbn",
         directory("{accession}/ps")
