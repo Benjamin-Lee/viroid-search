@@ -100,8 +100,8 @@ rule rnafold:
         "viennarna/2.4.17"
     shell: 
         """
-        cd {wildcards.accession}"
+        cd {wildcards.accession}
         RNAfold cirit.fasta -j{resources.cpus} > cirit.dbn
         mkdir ps
         mv *.ps ps
-        """"
+        """
