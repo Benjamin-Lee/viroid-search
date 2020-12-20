@@ -103,7 +103,7 @@ rule rnafold:
         "{accession}/cirit_gt200_lt2000.dbn",
         directory("{accession}/ps")
     resources:
-        time_min = 10,
+        time_min = 15,
         cpus = 32
     group: "postprocessing"
     envmodules:
