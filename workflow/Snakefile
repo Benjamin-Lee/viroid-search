@@ -1,5 +1,5 @@
 rule all:
-    input: expand("{accession}/cirit.dbn", accession=config["accessions"] if type(config["accessions"]) == list else config["accessions"].split(","))
+    input: expand("{accession}/cirit_gt200_lt2000.dbn", accession=config["accessions"] if type(config["accessions"]) == list else config["accessions"].split(","))
 
 rule download_sra:
     output: 
@@ -88,8 +88,15 @@ rule cirit:
         "java/12.0.1"
     shell: "java -jar ~/Cirit-1.0.jar -i {input} -o {output}"
 
-rule rnafold:
+rule length_filter:
     input: "{accession}/cirit.fasta"
+    output: "{accession}/cirit_gt{min_length}_lt{max_length}.fasta"
+    resources: time_min = 10
+    envmodules: "seqkit/0.14.0"
+    shell: "seqkit seq -m {min_length} -M {max_length} -o {output}"
+
+rule rnafold:
+    input: "{accession}/cirit_gt200_lt2000.fasta"
     output: 
         "{accession}/cirit.dbn",
         directory("{accession}/ps")
@@ -101,7 +108,7 @@ rule rnafold:
     shell: 
         """
         cd {wildcards.accession}
-        RNAfold cirit.fasta -j{resources.cpus} > cirit.dbn
+        RNAfold cirit_gt200_lt2000.fasta -j{resources.cpus} > cirit.dbn
         mkdir ps
         mv *.ps ps
         """
