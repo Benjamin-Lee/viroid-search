@@ -14,8 +14,8 @@ rule download_sra:
         "sratoolkit/2.10.9",
     shell: 
         """
-        prefetch {wildcards.accession} -f yes > {log} 2>&1
-        fasterq-dump {wildcards.accession} -O {wildcards.accession} --threads {resources.cpus} > {log} 2>&1
+        prefetch {wildcards.accession} -f yes >> {log} 2>&1
+        fasterq-dump {wildcards.accession} -O {wildcards.accession} --threads {resources.cpus} >> {log} 2>&1
 
         # ensure we have a valid output by checking the logfile
         if $(grep -q "reads written" {log}); then 
