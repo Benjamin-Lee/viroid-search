@@ -25,8 +25,8 @@ rule download_sra:
             exit 1
         fi
         
-        # # if we still have the SRA file, delete it
-        # [ -f {wildcards.accession}/{wildcards.accession}.sra ] && rm {wildcards.accession}/{wildcards.accession}.sra
+        # if we still have the SRA file, delete it
+        [ -f {wildcards.accession}/{wildcards.accession}.sra ] && rm {wildcards.accession}/{wildcards.accession}.sra
 
         # # compress the intermediate FASTQ files
         # pigz -p{resources.cpus} {wildcards.accession}/{wildcards.accession}_1.fastq.gz
