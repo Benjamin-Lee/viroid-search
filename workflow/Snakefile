@@ -1,5 +1,13 @@
+localrules: all, per_accession # we don't need to send these rules to the cluster
+
 rule all:
-    input: expand("{accession}/cirit_gt200_lt2000.dbn", accession=config["accessions"] if type(config["accessions"]) == list else config["accessions"].split(","))
+    input: expand("{accession}/{accession}.all", accession=config["accessions"] if type(config["accessions"]) == list else config["accessions"].split(","))
+
+rule per_accession:
+    output: touch("{accession}/{accession}.all")
+    input: 
+        "{accession}/cirit_gt200_lt2000.dbn",
+        "{accession}/{accession}_known_viroids.sam"
 
 rule download_sra:
     output: 
@@ -115,3 +123,15 @@ rule rnafold:
         mkdir ps
         mv *.ps ps
         """
+
+rule mapping:
+    input: 
+        r1 = "{accession}/{accession}_1.fastp.fastq.gz",
+        r2 = "{accession}/{accession}_2.fastp.fastq.gz"
+    output: "{accession}/{accession}_known_viroids.sam"
+    resources:
+        cpus = 16 # samtools view uses additional threads, so it's hardcoded
+    envmodules:
+        "samtools/1.11",
+        "minimap2/2.17"
+    shell: "minimap2 -ax sr -t {resources.cpus} {config[viroid_path]} {input.r1} {input.r2} | samtools view --threads 15 -F 4 - > {output}"
