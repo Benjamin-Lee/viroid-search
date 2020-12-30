@@ -1,7 +1,17 @@
-localrules: all, per_accession # we don't need to send these rules to the cluster
+localrules: summarize, per_accession # we don't need to send these rules to the cluster
 
-rule all:
+rule summarize:
+    output:
+        "summary/all.dbn",
+        "summary/all.sam",
+        "summary/all.fasta"
     input: expand("{accession}/{accession}.all", accession=config["accessions"] if type(config["accessions"]) == list else config["accessions"].split(","))
+    shell:
+        """
+        cat */*.sam > summary/all.sam
+        cat */*.dbn > summary/all.dbn
+        awk 'NR % 3 != 0' summary/all.dbn > summary/all.fasta
+        """
 
 rule per_accession:
     output: touch("{accession}/{accession}.all")
