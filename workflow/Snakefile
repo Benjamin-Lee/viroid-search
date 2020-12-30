@@ -155,7 +155,8 @@ rule blastn:
         csv = "{accession}/blast/{accession}.7.csv",
         txt = "{accession}/blast/{accession}.0.txt"
     resources:
-        cpus = 16
+        cpus = 16,
+        mem_mb =  100000
     envmodules:
         "blast/2.11.0+"
     shell:
