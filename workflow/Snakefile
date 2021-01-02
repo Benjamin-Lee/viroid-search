@@ -10,7 +10,7 @@ rule summarize:
         """
         cat */*.sam > summary/all.sam
         cat */*.dbn > summary/all.dbn
-        awk 'NR % 3 != 0' summary/all.dbn > summary/all.fasta
+        cat */cirit_gt200_lt2000.fasta > summary/all.fasta
         """
 
 rule per_accession:
@@ -18,7 +18,7 @@ rule per_accession:
     input: 
         "{accession}/cirit_gt200_lt2000.dbn",
         "{accession}/{accession}_known_viroids.sam",
-        "{accession}/blast/"
+        "{accession}/blast/{accession}.7.tsv"
 
 rule download_sra:
     output: 
@@ -152,18 +152,25 @@ rule blastn:
     output: 
         directory("{accession}/blast/"),
         asn = "{accession}/blast/{accession}.11.asn",
-        tsv = "{accession}/blast/{accession}.7.tsv",
-        txt = "{accession}/blast/{accession}.0.txt"
     resources:
         cpus = 16,
         mem_mb =  100000
+    group: "blast"
+    envmodules:
+        "blast/2.11.0+"
+    shell: "blastn -task blastn -db /fdb/blastdb/nt -query {input} -out {output.asn} -num_threads {resources.cpus} -outfmt 11"
+
+rule blast_formatter:
+    input: "{accession}/blast/{accession}.11.asn" 
+    output:
+        tsv = "{accession}/blast/{accession}.7.tsv",
+        txt = "{accession}/blast/{accession}.0.txt"
+    group: "blast"
     envmodules:
         "blast/2.11.0+"
     shell:
         """
         export BLASTDB=/fdb/taxonomy/
-        blastn -task blastn -db /fdb/blastdb/nt -query {input} -out {output.asn} -num_threads {resources.cpus} -outfmt 11
-        blast_formatter -archive {output.asn} -outfmt "0" > {output.txt}
-        blast_formatter -archive {output.asn} -outfmt "7 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore staxids sblastnames scomnames stitle
-" > {output.tsv}
+        blast_formatter -archive {input} -outfmt "0" > {output.txt}
+        blast_formatter -archive {input} -outfmt "7 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore staxids sblastnames scomnames stitle" > {output.tsv}
         """
