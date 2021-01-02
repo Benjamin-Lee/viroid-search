@@ -130,7 +130,7 @@ rule rnafold:
     shell: 
         """
         cd {wildcards.accession}
-        RNAfold cirit_gt200_lt2000.fasta -j{resources.cpus} > cirit_gt200_lt2000.dbn
+        RNAfold cirit_gt200_lt2000.fasta --jobs={resources.cpus} --circ --temp=25 > cirit_gt200_lt2000.dbn
         mkdir ps
         mv *.ps ps
         """
