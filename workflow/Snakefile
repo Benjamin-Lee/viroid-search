@@ -5,12 +5,14 @@ rule summarize:
         "summary/all.dbn",
         "summary/all.sam",
         "summary/all.fasta"
+        "summary/blast_all.7.tsv"
     input: expand("{accession}/{accession}.all", accession=config["accessions"] if type(config["accessions"]) == list else config["accessions"].split(","))
     shell:
         """
         cat */*.sam > summary/all.sam
         cat */*.dbn > summary/all.dbn
         cat */cirit_gt200_lt2000.fasta > summary/all.fasta
+        cat */blast/*.tsv > summary/blast_all.7.tsv
         """
 
 rule per_accession:
