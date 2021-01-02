@@ -150,7 +150,6 @@ rule mapping:
 rule blastn:
     input: "{accession}/cirit_gt200_lt2000.fasta"
     output: 
-        directory("{accession}/blast/"),
         asn = "{accession}/blast/{accession}.11.asn",
     resources:
         cpus = 16,
