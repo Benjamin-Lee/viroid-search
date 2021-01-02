@@ -152,7 +152,7 @@ rule blastn:
     output: 
         directory("{accession}/blast/"),
         asn = "{accession}/blast/{accession}.11.asn",
-        csv = "{accession}/blast/{accession}.7.csv",
+        tsv = "{accession}/blast/{accession}.7.tsv",
         txt = "{accession}/blast/{accession}.0.txt"
     resources:
         cpus = 16,
@@ -165,5 +165,5 @@ rule blastn:
         blastn -task blastn -db /fdb/blastdb/nt -query {input} -out {output.asn} -num_threads {resources.cpus} -outfmt 11
         blast_formatter -archive {output.asn} -outfmt "0" > {output.txt}
         blast_formatter -archive {output.asn} -outfmt "7 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore staxids sblastnames scomnames stitle
-" > {output.csv}
+" > {output.tsv}
         """
