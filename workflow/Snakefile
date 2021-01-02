@@ -166,6 +166,8 @@ rule blast_formatter:
     output:
         tsv = "{accession}/blast/{accession}.7.tsv",
         txt = "{accession}/blast/{accession}.0.txt"
+    resources:
+        mem_mb: 32000
     group: "blast"
     envmodules:
         "blast/2.11.0+"
