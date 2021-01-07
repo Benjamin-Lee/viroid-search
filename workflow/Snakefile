@@ -20,7 +20,7 @@ rule per_accession:
     output: touch("{accession}/{accession}.all")
     input: 
         "{accession}/{accession}_known_viroids.sam",
-        "{accession}/blast/cirit_gt200_lt2000.no_hits.dbn"
+        "{accession}/blast/cirit_gt200_lt2000.no_hits.dbn",
         "{accession}/blast/cirit_gt200_lt2000.no_hits.fasta"
 
 rule download_sra:
