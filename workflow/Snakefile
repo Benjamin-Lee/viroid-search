@@ -4,7 +4,7 @@ rule summarize:
     output:
         "summary/all.dbn",
         "summary/all.sam",
-        "summary/all.fasta"
+        "summary/all.fasta",
         "summary/all.no_hits.dbn"
     input: expand("{accession}/{accession}.all", accession=config["accessions"] if type(config["accessions"]) == list else config["accessions"].split(","))
     shell:
