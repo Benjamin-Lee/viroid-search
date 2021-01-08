@@ -188,6 +188,8 @@ rule seqs_with_no_blast_hits:
     group: "blast"
     conda:
         "envs/no_blast_hits.yaml"
+    params:
+        max_evalue = 1.0
     script: "scripts/no_blast_hits.py"
 
 rule structures_with_no_blast_hits:
