@@ -8,5 +8,12 @@ htmldocs/
 !*.*
 !LICENSE
 
-# Ignore FASTA files
+# Ignore FASTA and structure files
 *.fa*
+*.dbn
+
+# No need to store the Snakemake internals
+.snakemake/*
+
+# Put here by my Mac
+.DS_Store
