@@ -158,7 +158,7 @@ rule blastn:
     resources:
         cpus = 16,
         mem_mb =  100000,
-        time_min = 120
+        time_min = 720
     group: "blast"
     envmodules:
         "blast/2.11.0+"
