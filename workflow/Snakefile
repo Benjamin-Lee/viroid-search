@@ -157,7 +157,7 @@ rule blastn:
         asn = "{accession}/blast/{accession}.11.asn",
     resources:
         cpus = 16,
-        mem_mb =  100000
+        mem_mb =  100000,
         time_min = 120
     group: "blast"
     envmodules:
