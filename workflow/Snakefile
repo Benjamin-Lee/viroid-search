@@ -150,11 +150,11 @@ rule mapping:
         "samtools/1.11",
         "bwa-mem2/2-2.1"
     shell: 
-    """
-    bwa-mem2 mem -t 14 {config[viroid_path]} {input.r1} {input.r2} > {wildcards.accession}/{wildcards.accession}.sam
-    samtools view --threads 15 -F 4 {wildcards.accession} > {output}
-    rm {wildcards.accession}/{wildcards.accession}.sam
-    """
+        """
+        bwa-mem2 mem -t 14 {config[viroid_path]} {input.r1} {input.r2} > {wildcards.accession}/{wildcards.accession}.sam
+        samtools view --threads 15 -F 4 {wildcards.accession} > {output}
+        rm {wildcards.accession}/{wildcards.accession}.sam
+        """
 
 rule blastn:
     input: "{accession}/cirit_gt200_lt2000.fasta"
