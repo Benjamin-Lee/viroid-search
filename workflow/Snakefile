@@ -152,7 +152,7 @@ rule mapping:
     shell: 
         """
         bwa-mem2 mem -t 14 {config[viroid_path]} {input.r1} {input.r2} > {wildcards.accession}/{wildcards.accession}.sam
-        samtools view --threads 15 -F 4 wildcards.accession}/{wildcards.accession}.sam > {output}
+        samtools view --threads 15 -F 4 {wildcards.accession}/{wildcards.accession}.sam > {output}
         rm {wildcards.accession}/{wildcards.accession}.sam
         """
 
