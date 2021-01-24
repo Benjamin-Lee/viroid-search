@@ -145,7 +145,8 @@ rule mapping:
         r2 = "{accession}/{accession}_2.fastp.fastq.gz"
     output: "{accession}/{accession}_known_viroids.sam"
     resources:
-        cpus = 16 # samtools view uses additional threads, so it's hardcoded
+        cpus = 16, # samtools view uses additional threads, so it's hardcoded
+        mem_mb = 16000 # extra ram to be on the safe side
     envmodules:
         "samtools/1.11",
         "bwa-mem2/2-2.1"
