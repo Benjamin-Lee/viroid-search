@@ -17,4 +17,8 @@ htmldocs/
 
 # Put here by my Mac
 .DS_Store
-data/
+
+# Don't track data used for experimentation
+/data
+
+.mypy_cache/
