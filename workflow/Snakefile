@@ -13,7 +13,7 @@ rule summarize:
         """
         cat */*.sam > summary/all.sam
         cat */*.dbn > summary/cirit.dbn
-        cat */rnaspades/transcripts.fasta > all_transcripts.fasta
+        cat */rnaspades/transcripts.fasta > summary/all_transcripts.fasta
         cat */cirit_gt200_lt2000.fasta > summary/cirit.fasta
         cat */blast/cirit_gt200_lt2000.no_hits.fasta > summary/cirit.no_hits.fasta
         cat */blast/cirit_gt200_lt2000.no_hits.dbn > summary/cirit.no_hits.dbn
